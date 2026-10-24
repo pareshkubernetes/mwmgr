@@ -68,6 +68,15 @@ export function createApp(c: Container): Express {
           () => (checks.postgres = 'ok'),
           () => (checks.postgres = 'unavailable'),
         ),
+        // only when build/deploy projects live on a different cluster
+        ...(c.deployKube !== c.kube
+          ? [
+              c.deployKube.ping().then(
+                () => (checks.deployCluster = 'ok'),
+                () => (checks.deployCluster = 'unavailable'),
+              ),
+            ]
+          : []),
       ]);
       const ready = Object.values(checks).every((v) => v === 'ok');
       res.status(ready ? 200 : 503).json({ status: ready ? 'ready' : 'not-ready', checks });

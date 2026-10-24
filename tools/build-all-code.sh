@@ -58,7 +58,7 @@ is_excluded() {
   esac
   case "$1" in
     .env|.env.*|*/.env|*/.env.*) [ "$(basename "$1")" = ".env.example" ] || return 0 ;;
-    "$OUT"|all-app-code.txt|.handover-state|.handover-state.prev|*.bundle.txt|*.log|.DS_Store|*/.DS_Store|Thumbs.db) return 0 ;;
+    "$OUT"|all-app-code*.txt|.handover-state|.handover-state.prev|*.bundle.txt|*.log|.DS_Store|*/.DS_Store|Thumbs.db) return 0 ;;
   esac
   return 1
 }

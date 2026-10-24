@@ -42,7 +42,11 @@ beforeEach(() => {
     recorder,
     {
       limits: { maxRunning: 2, maxTotal: 3 },
-      editors: { vscode: 'che-code', intellij: 'che-idea', goland: 'che-goland' },
+      editors: {
+        vscode: 'che-incubator/che-code/latest',
+        intellij: 'che-incubator/che-idea/latest',
+        goland: 'che-incubator/che-goland/latest',
+      },
       devSpacesServiceFqdn: 'https://devspaces.test',
     },
     clock,

@@ -31,6 +31,30 @@ export function loadKubeConfig(kubeconfigPath?: string): KubeConfig {
   return kc;
 }
 
+export interface ClusterConnection {
+  apiUrl: string;
+  /** Bearer token (e.g. from devSpacesClusterToken001d). Wins over a kubeconfig. */
+  token?: string;
+  kubeconfigPath?: string;
+  /** Do not verify the cluster's certificate (NODE_TLS_REJECT_UNAUTHORIZED=0). */
+  skipTlsVerify?: boolean;
+}
+
+/** Token + API URL when a token is given, else the kubeconfig file, else the pod's service account / default config. */
+export function createKubeConfig(connection: ClusterConnection): KubeConfig {
+  if (!connection.token || !connection.apiUrl) return loadKubeConfig(connection.kubeconfigPath);
+  const kc = new KubeConfig();
+  kc.loadFromOptions({
+    clusters: [
+      { name: 'cluster', server: connection.apiUrl, skipTLSVerify: connection.skipTlsVerify === true },
+    ],
+    users: [{ name: 'service-account', token: connection.token }],
+    contexts: [{ name: 'default', cluster: 'cluster', user: 'service-account' }],
+    currentContext: 'default',
+  });
+  return kc;
+}
+
 /** Kubernetes/OpenShift access through the pod's service account (or a kubeconfig for local runs). */
 export class KubeClient implements KubeGateway {
   private readonly core: CoreV1Api;

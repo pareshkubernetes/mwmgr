@@ -3,7 +3,7 @@ import { MetricsRepository, NoopMetricsStore, createPgPool } from './infra/db/Me
 import { DevfileRegistryClient, createRegistryHttp } from './infra/devreg/DevfileRegistryClient.js';
 import { EmailNotifier, NoopNotifier } from './infra/email/EmailNotifier.js';
 import { GraphqlUserDirectory, NullUserDirectory } from './infra/email/GraphqlUserDirectory.js';
-import { KubeClient, loadKubeConfig } from './infra/kube/KubeClient.js';
+import { KubeClient, createKubeConfig } from './infra/kube/KubeClient.js';
 import {
   systemClock,
   type Clock,
@@ -22,6 +22,8 @@ import type { Logger } from './utils/logger.js';
 
 export interface Dependencies {
   kube: KubeGateway;
+  /** Cluster for build/deploy projects when it is a different one; defaults to `kube`. */
+  deployKube?: KubeGateway;
   metrics: MetricsStore;
   registry: DevfileRegistry;
   notifier: Notifier;
@@ -32,6 +34,8 @@ export interface Container {
   config: AppConfig;
   logger: Logger;
   kube: KubeGateway;
+  /** Same object as `kube` unless a separate deploy cluster is configured. */
+  deployKube: KubeGateway;
   metrics: MetricsStore;
   registry: DevfileRegistry;
   recorder: MetricsRecorder;
@@ -56,6 +60,7 @@ export function buildContainer(config: AppConfig, logger: Logger, deps: Dependen
     config,
     logger,
     kube: deps.kube,
+    deployKube: deps.deployKube ?? deps.kube,
     metrics: deps.metrics,
     registry: deps.registry,
     recorder,
@@ -76,7 +81,7 @@ export function buildContainer(config: AppConfig, logger: Logger, deps: Dependen
     pats: new PatService(deps.kube, namespaces, recorder, config.github),
     gitConfig: new GitConfigService(deps.kube, namespaces, recorder),
     deployments: new DeploymentNamespaceService(
-      deps.kube,
+      deps.deployKube ?? deps.kube,
       recorder,
       deps.notifier,
       config.cluster.deployProjectRequester,
@@ -90,14 +95,34 @@ export function createProductionDependencies(config: AppConfig, logger: Logger):
   const directory = config.notification.userDirectoryUrl
     ? new GraphqlUserDirectory(config.notification.userDirectoryUrl, logger)
     : new NullUserDirectory();
+  const { cluster } = config;
+  const skipTlsVerify = !cluster.tlsRejectUnauthorized;
+  const separateDeploy = cluster.deployApiUrl !== cluster.apiUrl;
   return {
-    kube: new KubeClient(loadKubeConfig(config.cluster.kubeconfigPath)),
+    kube: new KubeClient(
+      createKubeConfig({
+        apiUrl: cluster.apiUrl,
+        token: cluster.token,
+        kubeconfigPath: cluster.kubeconfigPath,
+        skipTlsVerify,
+      }),
+    ),
+    deployKube: separateDeploy
+      ? new KubeClient(
+          createKubeConfig({
+            apiUrl: cluster.deployApiUrl,
+            token: cluster.deployToken,
+            kubeconfigPath: cluster.kubeconfigPath,
+            skipTlsVerify,
+          }),
+        )
+      : undefined,
     metrics: config.postgres.enabled
       ? new MetricsRepository(createPgPool(config.postgres, logger), config.postgres.table, logger)
       : new NoopMetricsStore(),
     registry: new DevfileRegistryClient(createRegistryHttp(config.devreg.url)),
     notifier: config.notification.url
-      ? new EmailNotifier(config.notification, config.cluster.apiUrl, directory, logger)
+      ? new EmailNotifier(config.notification, config.cluster.deployApiUrl, directory, logger)
       : new NoopNotifier(),
   };
 }

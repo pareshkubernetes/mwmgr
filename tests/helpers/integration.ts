@@ -7,6 +7,7 @@ import { DevfileRegistryClient, createRegistryHttp } from '../../src/infra/devre
 import { silentLogger } from '../../src/utils/logger.js';
 import { makeConfig, makeFakes, makePgMemRepository, type Fakes } from './testkit.js';
 import { startRegistryServer, type RegistryServer } from './registry-server.js';
+import type { InMemoryKube } from './InMemoryKube.js';
 
 export interface Integration {
   app: Express;
@@ -25,13 +26,17 @@ export interface Integration {
 /**
  * Real routes, services, SQL (pg-mem) and HTTP devfile registry; only the cluster is in memory.
  */
-export async function startIntegration(env: Record<string, string> = {}): Promise<Integration> {
+export async function startIntegration(
+  env: Record<string, string> = {},
+  options: { deployKube?: InMemoryKube } = {},
+): Promise<Integration> {
   const registry = await startRegistryServer();
   const config = makeConfig({ DEVREG_URL: registry.url, ...env });
   const fakes = makeFakes();
   const db = await makePgMemRepository();
   const container = buildContainer(config, silentLogger, {
     kube: fakes.kube,
+    deployKube: options.deployKube,
     metrics: db.repo,
     registry: new DevfileRegistryClient(createRegistryHttp(registry.url)),
     notifier: fakes.notifier,

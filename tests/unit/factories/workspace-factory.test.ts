@@ -13,7 +13,7 @@ const args = (over: Partial<Parameters<typeof buildDevWorkspaceObject>[0]> = {})
   stackVersion: '2.0.0',
   devfile: parseDevfile(SAMPLE_DEVFILE_YAML),
   editor: 'vscode' as const,
-  editorId: 'che-code',
+  editorId: 'che-incubator/che-code/latest',
   devSpacesServiceFqdn: 'https://devspaces.test',
   ...over,
 });
@@ -38,8 +38,20 @@ describe('buildDevWorkspaceObject', () => {
     ]);
   });
 
+  it('uses the editor id exactly as configured, e.g. the team’s che-idea-server value', () => {
+    const dw = buildDevWorkspaceObject(
+      args({ editor: 'intellij', editorId: 'che-incubator/che-idea-server/latest' }),
+    );
+    expect(dw.spec?.contributions?.[0]?.uri).toBe(
+      'https://devspaces.test/dashboard/api/editors/devfile?che-editor=che-incubator/che-idea-server/latest',
+    );
+    expect(dw.spec?.contributions?.[0]?.uri).not.toMatch(/che-incubator.*che-incubator/);
+  });
+
   it('records stack metadata in annotations and labels', () => {
-    const dw = buildDevWorkspaceObject(args({ editor: 'goland', editorId: 'che-goland' }));
+    const dw = buildDevWorkspaceObject(
+      args({ editor: 'goland', editorId: 'che-incubator/che-goland/latest' }),
+    );
     expect(dw.metadata?.annotations).toMatchObject({
       dw: 'java-maven-ab12',
       workspaceVersion: '2.0.0',

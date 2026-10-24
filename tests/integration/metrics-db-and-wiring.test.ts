@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createProductionDependencies, buildContainer } from '../../src/container.js';
 import { NoopMetricsStore } from '../../src/infra/db/MetricsRepository.js';
+import { KubeClient } from '../../src/infra/kube/KubeClient.js';
 import { EmailNotifier, NoopNotifier } from '../../src/infra/email/EmailNotifier.js';
 import { MetricsRecorder } from '../../src/services/MetricsRecorder.js';
 import { silentLogger } from '../../src/utils/logger.js';
@@ -203,6 +204,36 @@ describe('production wiring', () => {
     expect(deps.kube).toBeDefined();
   });
 
+  describe('with the team’s token-based environment (no kubeconfig file at all)', () => {
+    const team = {
+      CLUSTER_API_URL: 'https://api.namctigtd001d.ecs.dyn.nsroot.net:6443',
+      devSpacesClusterToken001d: 'fake-devspaces-token',
+      devOpsToken004d: 'fake-devops-token',
+      NODE_TLS_REJECT_UNAUTHORIZED: '0',
+    };
+
+    it('connects with the cluster URL and token, and uses one cluster for everything', () => {
+      const deps = createProductionDependencies(makeConfig(team), silentLogger);
+      expect(deps.kube).toBeInstanceOf(KubeClient);
+      expect(deps.deployKube).toBeUndefined(); // DEPLOY_CLUSTER_API_URL is not set
+      const container = buildContainer(makeConfig(team), silentLogger, deps);
+      expect(container.deployKube).toBe(container.kube);
+    });
+
+    it('builds a second client for a different deploy cluster, authenticated with devOpsToken004d', () => {
+      const config = makeConfig({
+        ...team,
+        DEPLOY_CLUSTER_API_URL: 'https://api.namctiswd004d.ecs.dyn.nsroot.net:6443',
+      });
+      const deps = createProductionDependencies(config, silentLogger);
+      expect(deps.kube).toBeInstanceOf(KubeClient);
+      expect(deps.deployKube).toBeInstanceOf(KubeClient);
+      expect(deps.deployKube).not.toBe(deps.kube);
+      expect(config.cluster.deployToken).toBe('fake-devops-token');
+      expect(config.cluster.token).toBe('fake-devspaces-token');
+    });
+  });
+
   it('uses the email notifier and a user directory when configured', () => {
     const config = makeConfig({
       KUBECONFIG_PATH: kubeconfig,
@@ -222,6 +253,7 @@ describe('production wiring', () => {
     expect(Object.keys(container).sort()).toEqual(
       [
         'config',
+        'deployKube',
         'deployments',
         'gitConfig',
         'kube',

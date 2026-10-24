@@ -1,16 +1,25 @@
 import type { Server } from 'node:http';
-import { loadConfig } from './config/env.js';
+import { loadConfig, startupSummary } from './config/env.js';
 import { buildContainer, createProductionDependencies } from './container.js';
 import { createApp } from './http/app.js';
 import { createLogger } from './utils/logger.js';
 import { errorMessage } from './utils/errors.js';
 
 async function main(): Promise<void> {
-  const config = loadConfig();
+  // Like the original service, a kubeconfig path may be given as the first argument: node dist/index.js <kubeconfig>
+  const config = loadConfig(
+    process.argv[2] ? { ...process.env, KUBECONFIG_PATH: process.argv[2] } : process.env,
+  );
   const logger = createLogger(config.logLevel);
+  if (!config.cluster.tlsRejectUnauthorized) {
+    logger.warn('cluster.tls_verification_disabled', {
+      reason: 'NODE_TLS_REJECT_UNAUTHORIZED=0',
+      risk: 'the clusters, the devfile registry and other HTTPS peers are not verified',
+    });
+  }
   const container = buildContainer(config, logger, createProductionDependencies(config, logger));
   const server: Server = createApp(container).listen(config.port, () =>
-    logger.info('server.listening', { port: config.port, cluster: config.cluster.apiUrl }),
+    logger.info('server.listening', startupSummary(config)),
   );
 
   let shuttingDown = false;

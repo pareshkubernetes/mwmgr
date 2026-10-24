@@ -51,6 +51,28 @@ requestmemory, duration, storage, useraction, errordetail, workspaceversion, edi
 - **Timestamps** are written as UTC wall-clock text, as the original did.
 - A database problem never blocks a workspace action: it is logged and the action continues.
 
+## Environment variables
+
+Every variable the team exports is understood as-is (`.env.example` lists them with comments):
+
+| Variable                                         | Meaning                                                                                                                    |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| `PORT`                                           | HTTP port (default 3050)                                                                                                   |
+| `NODE_ENV`                                       | `development` / `uat` / `production`; also picks the Postgres CA file                                                      |
+| `SECRET_KEY`, `ADMIN_USERNAME`, `ADMIN_PASSWORD` | login and JWT signing; **required**, there is no fallback secret                                                           |
+| `CLUSTER_API_URL`                                | Dev Spaces cluster API                                                                                                     |
+| `devSpacesClusterToken001d`                      | its bearer token, found by name: the `001d` must end the cluster name (`namctigtd001d`)                                    |
+| `DEPLOY_CLUSTER_API_URL`, `devOpsToken004d`      | optional separate cluster for build/deploy projects and its token; unset = same cluster (a token for another id is unused) |
+| `DEVREG_URL`                                     | devfile registry                                                                                                           |
+| `EDITOR_VSCODE`, `EDITOR_INTELLIJ`               | full editor ids, e.g. `che-incubator/che-code/latest`                                                                      |
+| `NODE_TLS_REJECT_UNAUTHORIZED=0`                 | do not verify certificates (clusters and every HTTPS peer); a warning is logged at startup                                 |
+| `POSTGRES_*`                                     | see "Postgres: the existing database"                                                                                      |
+
+Without a token the service uses `KUBECONFIG_PATH` (or the first command-line argument), then the default kubeconfig /
+pod service account. `CLUSTER_TOKEN` and `DEPLOY_CLUSTER_TOKEN` set a token explicitly. The Dev Spaces dashboard address
+for the editor link is `DEV_SPACES_SERVICE_FQDN`, or `https://devspaces.apps.<cluster domain>` worked out from `CLUSTER_API_URL`.
+At startup the service logs what it understood (which variable supplied each token, never the token itself).
+
 ## API (version 1)
 
 All routes live under **`/api/v1`**. Send `Authorization: Bearer <jwt>` except for `login`.

@@ -1,6 +1,6 @@
 import { CoreV1Api, KubeConfig, KubernetesObjectApi } from '@kubernetes/client-node';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { KubeClient, loadKubeConfig } from '../../../src/infra/kube/KubeClient.js';
+import { KubeClient, createKubeConfig, loadKubeConfig } from '../../../src/infra/kube/KubeClient.js';
 import { ConflictError, ForbiddenError, NotFoundError, UpstreamError } from '../../../src/utils/errors.js';
 
 const apiError = (code: number) =>
@@ -214,5 +214,39 @@ describe('loadKubeConfig', () => {
   it('NotFoundError is what a translated 404 looks like', async () => {
     vi.spyOn(KubernetesObjectApi.prototype, 'patch').mockRejectedValue(apiError(404));
     await expect(client().setWorkspaceStarted('ns', 'ws', true)).rejects.toBeInstanceOf(NotFoundError);
+  });
+});
+
+describe('createKubeConfig (cluster URL + bearer token, as the team exports them)', () => {
+  const API = 'https://api.namctigtd001d.ecs.dyn.nsroot.net:6443';
+
+  it('talks to the given cluster with the given token', () => {
+    const kc = createKubeConfig({ apiUrl: API, token: 'fake-token' });
+    expect(kc.getCurrentCluster()).toMatchObject({ server: API, skipTLSVerify: false });
+    expect(kc.getCurrentUser()).toMatchObject({ token: 'fake-token' });
+  });
+
+  it('does not verify the cluster certificate only when asked to (NODE_TLS_REJECT_UNAUTHORIZED=0)', () => {
+    expect(
+      createKubeConfig({ apiUrl: API, token: 't', skipTlsVerify: true }).getCurrentCluster()?.skipTLSVerify,
+    ).toBe(true);
+    expect(
+      createKubeConfig({ apiUrl: API, token: 't', skipTlsVerify: false }).getCurrentCluster()?.skipTLSVerify,
+    ).toBe(false);
+  });
+
+  it('a token wins over a kubeconfig file', () => {
+    const kc = createKubeConfig({ apiUrl: API, token: 'fake-token', kubeconfigPath: '/no/such/file' });
+    expect(kc.getCurrentCluster()?.server).toBe(API);
+  });
+
+  it('without a token it falls back to the kubeconfig file, then to the default configuration', () => {
+    expect(() => createKubeConfig({ apiUrl: API, kubeconfigPath: '/no/such/file' })).toThrow();
+    expect(() => createKubeConfig({ apiUrl: API })).not.toThrow();
+    expect(() => createKubeConfig({ apiUrl: '', token: 'ignored without a URL' })).not.toThrow();
+  });
+
+  it('the resulting config builds a working client', () => {
+    expect(() => new KubeClient(createKubeConfig({ apiUrl: API, token: 'fake-token' }))).not.toThrow();
   });
 });

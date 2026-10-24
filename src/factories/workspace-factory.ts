@@ -14,7 +14,7 @@ export interface BuildWorkspaceArgs {
   stackVersion: string;
   devfile: Devfile;
   editor: EditorKey;
-  /** Editor id as the Dev Spaces dashboard knows it, e.g. `che-code`. */
+  /** Full editor id as the Dev Spaces dashboard knows it, e.g. `che-incubator/che-code/latest`. */
   editorId: string;
   devSpacesServiceFqdn: string;
   repositoryUrl?: string;
@@ -89,7 +89,7 @@ export function buildDevWorkspaceObject(a: BuildWorkspaceArgs): DevWorkspaceReso
       contributions: [
         {
           name: 'ide',
-          uri: `${a.devSpacesServiceFqdn}/dashboard/api/editors/devfile?che-editor=che-incubator/${a.editorId}/latest`,
+          uri: `${a.devSpacesServiceFqdn}/dashboard/api/editors/devfile?che-editor=${a.editorId}`,
         },
       ],
     },
