@@ -118,9 +118,9 @@ describe('asyncHandler', () => {
 });
 
 describe('createWorkspaceSchema', () => {
-  const ok = { devworkspaceValue: 'java-maven', csiid: '177398' };
+  const ok = { editor: 'vscode', stackVersion: '2.0.0', devworkspaceValue: 'java-maven', csiid: '177398' };
 
-  it('applies defaults and accepts numeric csiid', () => {
+  it('accepts required fields and numeric csiid', () => {
     expect(parse(createWorkspaceSchema, { ...ok, csiid: 177398 })).toEqual({ ...ok, editor: 'vscode' });
   });
   it('accepts all optional fields', () => {
@@ -162,7 +162,12 @@ describe('other schemas', () => {
   });
   it('error messages name the field', () => {
     try {
-      parse(createWorkspaceSchema, { devworkspaceValue: 'x', csiid: 'abc' });
+      parse(createWorkspaceSchema, {
+        editor: 'vscode',
+        stackVersion: '2.0.0',
+        devworkspaceValue: 'x',
+        csiid: 'abc',
+      });
       expect.unreachable();
     } catch (e) {
       expect((e as Error).message).toContain('csiid');

@@ -17,6 +17,7 @@ export function createApp(c: Container): Express {
     res.setHeader('x-request-id', requestId);
     const started = Date.now();
     res.on('finish', function logRequest() {
+      const failure = res.locals.failure as { error: Error; code: string } | undefined;
       // Match request severity to the HTTP status.
       const outcome = res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'success';
       c.logger[outcome]('request', {
@@ -27,6 +28,7 @@ export function createApp(c: Container): Express {
         ms: Date.now() - started,
         requestId,
         soeid: res.locals.soeid as string | undefined,
+        ...(failure ?? {}),
       });
     });
     next();

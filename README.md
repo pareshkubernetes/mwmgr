@@ -133,14 +133,14 @@ Create-workspace body:
 {
   "devworkspaceValue": "java-maven",
   "csiid": "177398",
-  "editor": "vscode",
+  "editorType": "che-code",
   "stackVersion": "2.0.0",
   "repositoryUrl": "https://github.com/acme/app.git",
-  "repositoryBranch": "main"
+  "repositoryCheckoutBranch": "main"
 }
 ```
 
-`editor` is `vscode` (default), `intellij` or `goland`; the last three fields are optional.
+`devworkspaceValue`, `csiid`, `editorType` and `stackVersion` are required. Editors are `che-code`, `che-idea`, or `che-goland`. `repositoryUrl` and `repositoryCheckoutBranch` are optional; omitted or blank values do not prevent workspace creation.
 
 **Versioning.** Every endpoint is served only under `/api/v1`, including health/readiness probes. Unversioned URLs return 404. See [API and code map](docs/API.md) for routers, controllers, administrative APIs, runtime configuration and log search.
 

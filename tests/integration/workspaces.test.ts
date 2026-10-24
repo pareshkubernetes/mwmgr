@@ -14,7 +14,7 @@ beforeEach(async () => {
 });
 
 const base = '/api/v1/pp1/workspaces';
-const body = { devworkspaceValue: 'java-maven', csiid: '1001' };
+const body = { editor: 'vscode', stackVersion: '2.0.0', devworkspaceValue: 'java-maven', csiid: '1001' };
 
 describe('GET /api/v1/catalog', () => {
   it('returns the registry catalog over real HTTP', async () => {
@@ -86,8 +86,8 @@ describe('POST /api/v1/:soeid/workspaces', () => {
     const dw = t.fakes.kube.workspaces()[0];
     expect(dw?.spec?.template?.projects).toEqual([
       {
-        name: 'app',
-        git: { remotes: { origin: 'https://github.com/acme/app.git' }, checkoutFrom: { revision: 'main' } },
+        name: 'default-project',
+        git: { remotes: { origin: 'https://github.com/acme/app.git' } },
       },
     ]);
     expect(dw?.spec?.template?.components?.some((c) => c.name === 'che-idea-server')).toBe(true);

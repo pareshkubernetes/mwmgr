@@ -112,6 +112,19 @@ export class WorkspaceService {
 
   async create(input: CreateWorkspaceInput): Promise<Workspace> {
     const { soeid, csiid } = input;
+    if (!input.repositoryUrl)
+      this.logger.info('workspace.repository_skipped', {
+        soeid,
+        csiid,
+        reason:
+          'No repositoryUrl supplied; creating the workspace from the stack without adding a repository.',
+      });
+    else if (!input.repositoryBranch)
+      this.logger.info('workspace.repository_default_branch', {
+        soeid,
+        csiid,
+        reason: 'No repositoryCheckoutBranch supplied; using the repository default branch.',
+      });
     this.assertCanCreateAnother(await this.listResources(soeid));
 
     const { name: namespace } = await this.namespaces.ensure(soeid, csiid);

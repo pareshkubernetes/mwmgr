@@ -116,7 +116,7 @@ describe('what the terminal shows for each API call', () => {
   it('a user action that worked (create) is green: the call and the workspace event', async () => {
     const res = await t
       .api('post', '/api/v1/pp1/workspaces')
-      .send({ devworkspaceValue: 'java-maven', csiid: '1001' });
+      .send({ editor: 'vscode', stackVersion: '2.0.0', devworkspaceValue: 'java-maven', csiid: '1001' });
     expect(res.status).toBe(200);
     expect((await requestLine('/api/v1/pp1/workspaces'))?.startsWith(COLORS.success)).toBe(true);
     const created = raw.find((l) => l.includes('workspace.created'));
@@ -129,7 +129,7 @@ describe('what the terminal shows for each API call', () => {
   it('start and stop are green successes too', async () => {
     const created = await t
       .api('post', '/api/v1/pp1/workspaces')
-      .send({ devworkspaceValue: 'python', csiid: '1001' });
+      .send({ editor: 'vscode', stackVersion: '1.0.0', devworkspaceValue: 'python', csiid: '1001' });
     const id = created.body.id as string;
     t.fakes.kube.setPhase('pp1-devspaces-1001', id, 'Running');
     raw.length = 0;

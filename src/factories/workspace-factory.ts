@@ -1,4 +1,5 @@
 import type { Devfile, DevWorkspaceResource, EditorKey } from '../types.js';
+import { buildWorkspaceSetupCommand } from './workspace-setup.js';
 
 export const WORKSPACE_LABELS = {
   csiid: 'devspaces.citi.com/csiid',
@@ -27,25 +28,20 @@ const EDITOR_DISPLAY: Record<EditorKey, string> = {
   goland: 'GoLand',
 };
 
-function repoName(url: string): string {
-  const last = url
-    .replace(/\.git$/, '')
-    .split('/')
-    .filter(Boolean)
-    .pop();
-  return (last ?? 'project').toLowerCase().replace(/[^a-z0-9-]/g, '-');
-}
-
 export function buildDevWorkspaceObject(a: BuildWorkspaceArgs): DevWorkspaceResource {
   const projects = [...((a.devfile.projects as unknown[] | undefined) ?? [])];
   if (a.repositoryUrl) {
-    projects.push({
-      name: repoName(a.repositoryUrl),
+    const requestedProject = {
+      name: 'default-project',
       git: {
         remotes: { origin: a.repositoryUrl },
-        ...(a.repositoryBranch ? { checkoutFrom: { revision: a.repositoryBranch } } : {}),
       },
-    });
+    };
+    const existing = projects.findIndex(
+      (project) => (project as { name?: string })?.name === 'default-project',
+    );
+    if (existing >= 0) projects[existing] = requestedProject;
+    else projects.push(requestedProject);
   }
 
   const template: NonNullable<NonNullable<DevWorkspaceResource['spec']>['template']> = {
@@ -62,6 +58,33 @@ export function buildDevWorkspaceObject(a: BuildWorkspaceArgs): DevWorkspaceReso
   if (projects.length > 0) template.projects = projects;
   if (Array.isArray(a.devfile.commands)) template.commands = a.devfile.commands;
   if (a.devfile.events) template.events = a.devfile.events;
+  const tools = a.devfile.components?.find((component) => component.name === 'tools' && component.container);
+  const container = tools ?? a.devfile.components?.find((component) => component.container);
+  if (container) {
+    const commands = [...(a.devfile.commands ?? [])];
+    let setupId = 'workspace-manager-setup';
+    while (commands.some((command) => (command as { id?: string })?.id === setupId)) setupId += '-post-start';
+    commands.push({
+      id: setupId,
+      exec: {
+        component: container.name,
+        commandLine: buildWorkspaceSetupCommand({
+          stack: a.stack,
+          repositoryUrl: a.repositoryUrl,
+          repositoryBranch: a.repositoryBranch,
+        }),
+        workingDir: '/projects',
+      },
+    });
+    const events = (
+      a.devfile.events && typeof a.devfile.events === 'object' ? a.devfile.events : {}
+    ) as Record<string, unknown>;
+    template.commands = commands;
+    template.events = {
+      ...events,
+      postStart: [...(Array.isArray(events.postStart) ? events.postStart : []), setupId],
+    };
+  }
 
   return {
     apiVersion: 'workspace.devfile.io/v1alpha2',

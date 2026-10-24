@@ -48,6 +48,8 @@ describe('journey: a developer’s day', () => {
 
     // Create (the project does not exist yet, so it is created too)
     const created = await call('POST', '/api/v1/pp58386/workspaces', {
+      editor: 'vscode',
+      stackVersion: '2.0.0',
       devworkspaceValue: stack,
       csiid: '177398',
     });
@@ -101,7 +103,12 @@ describe('journey: a developer’s day', () => {
   });
 
   it('keeps a developer’s tooling in sync: git config, PAT, deployment project', async () => {
-    await call('POST', '/api/v1/pp1/workspaces', { devworkspaceValue: 'python', csiid: '5' });
+    await call('POST', '/api/v1/pp1/workspaces', {
+      editor: 'vscode',
+      stackVersion: '1.0.0',
+      devworkspaceValue: 'python',
+      csiid: '5',
+    });
 
     expect(
       (await call('PUT', '/api/v1/pp1/gitconfig', { csiid: '5', content: '[user]\n  name = Pat\n' })).status,
@@ -138,10 +145,17 @@ describe('journey: a developer’s day', () => {
 describe('journey: several users share the platform', () => {
   it('isolates users from each other', async () => {
     const a = await call('POST', '/api/v1/alice1/workspaces', {
+      editor: 'vscode',
+      stackVersion: '2.0.0',
       devworkspaceValue: 'java-maven',
       csiid: '1',
     });
-    const b = await call('POST', '/api/v1/bob22/workspaces', { devworkspaceValue: 'python', csiid: '2' });
+    const b = await call('POST', '/api/v1/bob22/workspaces', {
+      editor: 'vscode',
+      stackVersion: '1.0.0',
+      devworkspaceValue: 'python',
+      csiid: '2',
+    });
     expect((await call('GET', '/api/v1/alice1/workspaces')).body.map((w: { id: string }) => w.id)).toEqual([
       a.body.id,
     ]);
@@ -158,14 +172,26 @@ describe('journey: several users share the platform', () => {
     expect((await asAlice('GET', '/api/v1/alice1/workspaces')).status).toBe(200);
     expect((await asAlice('GET', '/api/v1/bob22/workspaces')).status).toBe(403);
     expect(
-      (await asAlice('POST', '/api/v1/bob22/workspaces', { devworkspaceValue: 'python', csiid: '2' })).status,
+      (
+        await asAlice('POST', '/api/v1/bob22/workspaces', {
+          editor: 'vscode',
+          stackVersion: '1.0.0',
+          devworkspaceValue: 'python',
+          csiid: '2',
+        })
+      ).status,
     ).toBe(403);
     expect(e2e.fakes.kube.namespaces.size).toBe(0);
   });
 
   it('enforces the per-user limits while other users are unaffected', async () => {
     const make = (user: string, csiid: string) =>
-      call('POST', `/api/v1/${user}/workspaces`, { devworkspaceValue: 'python', csiid });
+      call('POST', `/api/v1/${user}/workspaces`, {
+        editor: 'vscode',
+        stackVersion: '1.0.0',
+        devworkspaceValue: 'python',
+        csiid,
+      });
     stopController(); // keep workspaces "active" so the running limit bites
     expect((await make('alice1', '1')).status).toBe(200);
     expect((await make('alice1', '1')).status).toBe(200);
@@ -178,8 +204,18 @@ describe('journey: several users share the platform', () => {
   it('survives two simultaneous first requests for a brand-new project', async () => {
     stopController();
     const [x, y] = await Promise.all([
-      call('POST', '/api/v1/carol3/workspaces', { devworkspaceValue: 'python', csiid: '3' }),
-      call('POST', '/api/v1/carol3/workspaces', { devworkspaceValue: 'python', csiid: '3' }),
+      call('POST', '/api/v1/carol3/workspaces', {
+        editor: 'vscode',
+        stackVersion: '1.0.0',
+        devworkspaceValue: 'python',
+        csiid: '3',
+      }),
+      call('POST', '/api/v1/carol3/workspaces', {
+        editor: 'vscode',
+        stackVersion: '1.0.0',
+        devworkspaceValue: 'python',
+        csiid: '3',
+      }),
     ]);
     expect([x.status, y.status]).toEqual([200, 200]);
     expect(e2e.fakes.kube.workspaces('carol3-devspaces-3')).toHaveLength(2);
@@ -202,14 +238,26 @@ describe('journey: things go wrong', () => {
 
   it('a registry outage is a clean 502 that creates nothing and is recorded', async () => {
     e2e.registry.failing = true;
-    const res = await call('POST', '/api/v1/pp1/workspaces', { devworkspaceValue: 'java-maven', csiid: '1' });
+    const res = await call('POST', '/api/v1/pp1/workspaces', {
+      editor: 'vscode',
+      stackVersion: '2.0.0',
+      devworkspaceValue: 'java-maven',
+      csiid: '1',
+    });
     expect(res.status).toBe(502);
     expect(res.body).toMatchObject({ code: 'UPSTREAM_ERROR' });
     expect(e2e.fakes.kube.workspaces()).toHaveLength(0);
     // recovery without restarting anything
     e2e.registry.failing = false;
     expect(
-      (await call('POST', '/api/v1/pp1/workspaces', { devworkspaceValue: 'java-maven', csiid: '1' })).status,
+      (
+        await call('POST', '/api/v1/pp1/workspaces', {
+          editor: 'vscode',
+          stackVersion: '2.0.0',
+          devworkspaceValue: 'java-maven',
+          csiid: '1',
+        })
+      ).status,
     ).toBe(200);
   });
 
@@ -218,7 +266,12 @@ describe('journey: things go wrong', () => {
       'create:DevWorkspace',
       Object.assign(new Error('admission webhook denied the request'), { code: 500 }),
     );
-    const res = await call('POST', '/api/v1/pp1/workspaces', { devworkspaceValue: 'java-maven', csiid: '1' });
+    const res = await call('POST', '/api/v1/pp1/workspaces', {
+      editor: 'vscode',
+      stackVersion: '2.0.0',
+      devworkspaceValue: 'java-maven',
+      csiid: '1',
+    });
     expect(res.status).toBe(500);
     const [row] = await e2e.sql(
       `SELECT status FROM metrics."devspaces-metrics" WHERE resourcetype = 'workspace'`,
@@ -234,7 +287,12 @@ describe('journey: things go wrong', () => {
       throw new Error('connection to metrics database lost');
     };
     try {
-      const res = await call('POST', '/api/v1/pp1/workspaces', { devworkspaceValue: 'python', csiid: '1' });
+      const res = await call('POST', '/api/v1/pp1/workspaces', {
+        editor: 'vscode',
+        stackVersion: '1.0.0',
+        devworkspaceValue: 'python',
+        csiid: '1',
+      });
       expect(res.status).toBe(200);
       expect((await call('GET', '/api/v1/pp1/workspaces')).body).toHaveLength(1);
       expect((await e2e.anonymous('GET', '/api/v1/healthz')).status).toBe(200);
@@ -261,8 +319,14 @@ describe('journey: things go wrong', () => {
     expect(bad.status).toBe(400);
     expect(((await bad.json()) as { code: string }).code).toBe('INVALID_JSON');
     expect(
-      (await call('POST', '/api/v1/pp1/workspaces', { devworkspaceValue: '../../etc/passwd', csiid: '1' }))
-        .status,
+      (
+        await call('POST', '/api/v1/pp1/workspaces', {
+          editor: 'vscode',
+          stackVersion: '2.0.0',
+          devworkspaceValue: '../../etc/passwd',
+          csiid: '1',
+        })
+      ).status,
     ).toBe(400);
     expect((await call('GET', '/api/v1/..%2F..%2Fetc/workspaces')).status).toBe(400);
   });

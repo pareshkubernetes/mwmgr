@@ -1,5 +1,5 @@
 import type { ErrorRequestHandler, NextFunction, Request, RequestHandler, Response } from 'express';
-import { AppError, NotFoundError, errorMessage } from '../utils/errors.js';
+import { AppError, NotFoundError, ValidationError, errorMessage } from '../utils/errors.js';
 import type { Logger } from '../utils/logger.js';
 
 export interface ErrorBody {
@@ -27,6 +27,7 @@ export function createErrorHandler(logger: Logger): ErrorRequestHandler {
     const requestId = res.locals.requestId as string | undefined;
 
     if (err instanceof AppError) {
+      res.locals.failure = { error: err, code: err.code };
       logger[err.status >= 500 ? 'error' : 'warn']('request.failed', {
         requestId,
         method: req.method,
@@ -34,13 +35,18 @@ export function createErrorHandler(logger: Logger): ErrorRequestHandler {
         status: err.status,
         code: err.code,
         error: err,
+        ...(err instanceof ValidationError ? { details: err.details } : {}),
       });
-      res.status(err.status).json(errorBody(err.message, err.code));
+      res.status(err.status).json({
+        ...errorBody(err.message, err.code),
+        ...(err instanceof ValidationError ? { details: err.details } : {}),
+      });
       return;
     }
     // body-parser errors carry a status and a type
     const parserError = err as { status?: number; type?: string };
     if (parserError.type === 'entity.parse.failed') {
+      res.locals.failure = { error: new Error('Request body is not valid JSON'), code: 'INVALID_JSON' };
       logger.warn('request.failed', {
         requestId,
         method: req.method,
@@ -53,6 +59,7 @@ export function createErrorHandler(logger: Logger): ErrorRequestHandler {
       return;
     }
     if (parserError.type === 'entity.too.large') {
+      res.locals.failure = { error: new Error('Request body is too large'), code: 'PAYLOAD_TOO_LARGE' };
       logger.warn('request.failed', {
         requestId,
         method: req.method,
@@ -65,6 +72,10 @@ export function createErrorHandler(logger: Logger): ErrorRequestHandler {
       return;
     }
     // Never leak internals for unexpected errors.
+    res.locals.failure = {
+      error: err instanceof Error ? err : new Error(errorMessage(err)),
+      code: 'INTERNAL_ERROR',
+    };
     logger.error('request.crashed', {
       requestId,
       path: req.path,

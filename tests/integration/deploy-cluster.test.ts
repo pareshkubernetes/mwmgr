@@ -38,7 +38,7 @@ describe('workspaces stay on the Dev Spaces cluster, deployment projects go to t
   it('workspaces and projects are created on the Dev Spaces cluster, never on the deploy cluster', async () => {
     const res = await t
       .api('post', '/api/v1/pp1/workspaces')
-      .send({ devworkspaceValue: 'java-maven', csiid: '1001' });
+      .send({ editor: 'vscode', stackVersion: '2.0.0', devworkspaceValue: 'java-maven', csiid: '1001' });
     expect(res.status).toBe(200);
     expect(t.fakes.kube.workspaces('pp1-devspaces-1001')).toHaveLength(1);
     expect(deploy.namespaces.size).toBe(0);

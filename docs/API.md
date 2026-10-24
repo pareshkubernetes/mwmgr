@@ -66,6 +66,55 @@ PAT writes accept `{ "csiid": "177398", "token": "..." }`. PAT reads and deletes
 `?csiid=177398`. Git configuration writes accept `{ "csiid": "177398", "content": "..." }`;
 reads and deletes use the same query parameter. POST and PUT Git configuration both upsert.
 
+## Creating a workspace
+
+`POST /api/v1/:soeid/workspaces` accepts the existing dashboard payload:
+
+```json
+{
+  "devworkspaceValue": "citi-optimus",
+  "csiid": "177398",
+  "editorType": "che-code",
+  "stackVersion": "8.1.1",
+  "repositoryUrl": "https://github.com/acme/project.git",
+  "repositoryCheckoutBranch": "optimus"
+}
+```
+
+The first four fields are required. `editorType` accepts `che-code`, `che-idea`, or
+`che-goland`. The previously documented `editor` and `repositoryBranch` names also
+remain accepted; conflicting aliases are rejected. Invalid nonempty values produce
+400 with a `details` array naming the offending fields.
+
+Repository URL and checkout branch are optional. Omitted, empty or null values do
+not prevent workspace creation. Without a URL, no request-supplied project is added
+and Git setup is skipped. Stack-provided projects remain intact. With a URL, the
+request-supplied project is named `default-project`, cloned by Dev Spaces under
+`/projects/default-project`. Branch selection happens in a post-start command so
+an unavailable branch does not fail that command. It tries the requested branch,
+then its remote tracking branch, then creates a local branch if no remote exists.
+With no branch supplied, it tries `main`, then `master`, retaining the current
+checkout if neither is available. Git failures are logged and the setup script
+returns success. Actual project cloning still depends on Dev Spaces and repository
+access; the API response confirms resource creation, not completed cloning.
+
+The post-start setup runs in the stack's `tools` container, or its first container
+when `tools` is absent. Existing commands and lifecycle events are preserved. For
+`citi-optimus`, it also makes `/home/user/mta-analyzer-rpc-linux-amd64/mta-analyzer-rpc`
+executable and updates `mta-core.analyzerPath` in
+`/checode/remote/data/Machine/settings.json` using `jq`. Missing files, missing `jq`,
+or configuration errors are logged without stopping setup. Other stacks skip MTA
+configuration. Request values are safely passed as environment variables to the
+workspace command; the API server needs no repository environment variables.
+
+Inspect `/tmp/workspace-setup-debug.log` inside the workspace for Git and MTA setup
+details. These operations execute in the workspace pod, so their runtime output is
+separate from the API server's logs.
+
+Failed API requests have a `request.failed` log containing the error's source and
+message. Their `request` summary uses that same source, rather than the response
+listener in `app.ts`. Successful request summaries identify the access-log function.
+
 ## Repairing or updating Kubernetes resources
 
 Restore existing defaults on a user's workspace project:

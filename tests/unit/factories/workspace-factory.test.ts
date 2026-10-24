@@ -19,6 +19,37 @@ const args = (over: Partial<Parameters<typeof buildDevWorkspaceObject>[0]> = {})
 });
 
 describe('buildDevWorkspaceObject', () => {
+  it('preserves lifecycle events and avoids setup command ID collisions', () => {
+    const dw = buildDevWorkspaceObject(
+      args({
+        devfile: {
+          components: [{ name: 'tools', container: { image: 'example/tools' } }],
+          commands: [
+            { id: 'workspace-manager-setup', exec: { component: 'tools', commandLine: 'echo existing' } },
+          ],
+          events: { preStart: ['prepare'], postStart: ['existing'] },
+        },
+      }),
+    );
+    expect(dw.spec?.template?.events).toEqual({
+      preStart: ['prepare'],
+      postStart: ['existing', 'workspace-manager-setup-post-start'],
+    });
+    expect(dw.spec?.template?.commands).toHaveLength(2);
+  });
+  it('replaces an existing default-project when an explicit repository is supplied', () => {
+    const dw = buildDevWorkspaceObject(
+      args({
+        devfile: {
+          projects: [{ name: 'default-project', git: { remotes: { origin: 'https://old.example/app' } } }],
+        },
+        repositoryUrl: 'https://github.com/acme/app.git',
+      }),
+    );
+    expect(dw.spec?.template?.projects).toEqual([
+      { name: 'default-project', git: { remotes: { origin: 'https://github.com/acme/app.git' } } },
+    ]);
+  });
   it('builds a started DevWorkspace with the stack inlined and the editor contributed', () => {
     const dw = buildDevWorkspaceObject(args());
     expect(dw).toMatchObject({
@@ -28,7 +59,7 @@ describe('buildDevWorkspaceObject', () => {
       spec: { started: true, routingClass: 'che' },
     });
     expect(dw.spec?.template?.components).toHaveLength(4);
-    expect(dw.spec?.template?.commands).toHaveLength(1);
+    expect(dw.spec?.template?.commands).toHaveLength(2);
     expect(dw.spec?.template?.events).toBeDefined();
     expect(dw.spec?.contributions).toEqual([
       {
@@ -72,10 +103,9 @@ describe('buildDevWorkspaceObject', () => {
     );
     expect(dw.spec?.template?.projects).toEqual([
       {
-        name: 'my-repo',
+        name: 'default-project',
         git: {
           remotes: { origin: 'https://github.com/acme/My_Repo.git' },
-          checkoutFrom: { revision: 'develop' },
         },
       },
     ]);
@@ -86,7 +116,7 @@ describe('buildDevWorkspaceObject', () => {
     const dw = buildDevWorkspaceObject(args({ devfile, repositoryUrl: 'https://github.com/acme/app' }));
     expect(dw.spec?.template?.projects).toEqual([
       { name: 'starter' },
-      { name: 'app', git: { remotes: { origin: 'https://github.com/acme/app' } } },
+      { name: 'default-project', git: { remotes: { origin: 'https://github.com/acme/app' } } },
     ]);
   });
 
