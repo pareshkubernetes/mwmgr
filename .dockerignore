@@ -1,0 +1,13 @@
+node_modules
+dist
+coverage
+legacy
+docs
+prompt
+helm
+kustomize.server
+base
+overlays
+tests
+.git
+.env

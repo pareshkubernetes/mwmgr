@@ -1,0 +1,11 @@
+dist
+coverage
+legacy
+node_modules
+prompt
+helm
+kustomize.server
+base
+overlays
+package-lock.json
+*.bundle.txt

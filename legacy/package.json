@@ -1,0 +1,9 @@
+{
+    "name": "workspace-mgr",
+    "Scripts": {
+        "run": "npm tsc && dist/index.js"
+    },
+    "dependencies": {
+        "axios": "^1.6.7"
+    }
+}

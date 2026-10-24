@@ -1,0 +1,7 @@
+{
+    "compilerOptions": {
+        "outDir": "./backend/dist/",
+        "module": "commonjs",
+        "types": ["express"]
+    }
+}

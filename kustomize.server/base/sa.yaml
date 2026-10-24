@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: List
+items:
+  - apiVersion: v1
+    kind: ServiceAccount
+    metadata: 
+      name: workspace-mgr
+  - apiVersion: rbac.authorization.k8s.io/v1
+    kind: ClusterRole
+    metadata: 
+      name: workspace-mgr-clusterrole
+    rules:
+    - apiGroups: [""]
+      resources: ["namespaces"]
+      verbs: ["*"]
+    - apiGroups: ["workspace.devfile.io"]
+      resources: ["devworkspaces", "devworkspacetemplates"]
+      verbs: ["*"]
+    - apiGroups: ["rbac.authorization.k8s.io"]
+      resources: ["roles", "rolebindings"]
+      verbs: ["*"]
+    - apiVersion: ["rbac.authorization.k8s.io/v1"]
+      kind: ClusterRoleBinding
+      metadata: 
+        name: workspace-mgr-binding
+      roleRef:
+        apiGroup: rbac.authorization.k8s.io
+        kind: ClusterRole
+        name: workspace-mgr-clusterrole
+      subjects:
+      - kind: ServiceAccount
+        name: workspace-mgr

@@ -1,0 +1,25 @@
+chart: 
+  name: "177398-workspace-mgr"
+  version: "0.1.0"
+  appVersion: "1.0.0"
+
+image: 
+  name: docker-cto-dev-local.artifactory.citigroup.net/cti-svcs-orion-177398/workspace-mgr
+  tag: "latest"
+  pullPolicy: Always
+
+service:
+  name: "workspace-mgr"
+  port: 3050
+  targetPort: 3050
+  type: clusterIP
+  selector: "workspace-mgr"
+
+route:
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None
+  
+name: "workspace-mgr"
+namespace: "cti-svcs-orion-177398"
