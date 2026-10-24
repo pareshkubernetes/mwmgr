@@ -8,4 +8,4 @@ kustomize.server
 base
 overlays
 package-lock.json
-*.bundle.txt
+all-app-code.txt

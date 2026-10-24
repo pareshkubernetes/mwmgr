@@ -11,7 +11,7 @@ Tick items as they are completed. Items map to [PROJECT_RULES.md](./PROJECT_RULE
 
 ## B. Scaffolding
 
-- [x] `package.json` with scripts: `build`, `start`, `dev`, `typecheck`, `lint`, `test`, `test:unit`, `test:integration`, `test:e2e`, `test:coverage`, `bundle`, `restore`
+- [x] `package.json` with scripts: `build`, `start`, `dev`, `typecheck`, `lint`, `test`, `test:unit`, `test:integration`, `test:e2e`, `test:coverage`
 - [x] `tsconfig.json` (strict, NodeNext), `tsconfig.build.json`
 - [x] ESLint + Prettier configs
 - [x] Vitest config with three projects and coverage thresholds
@@ -65,9 +65,8 @@ Tick items as they are completed. Items map to [PROJECT_RULES.md](./PROJECT_RULE
 - [x] Integration tests: routes + services + pg-mem + in-memory kube + HTTP registry
 - [x] E2E tests: login → create → list → start → stop → delete; PAT; gitconfig; deploy project; limits; auth failures; legacy-path client
 - [x] Coverage thresholds met
-- [x] `pack.sh` / `unpack.sh`: whole app in one text file and back, checksummed, never overwrites without `--force`
-- [x] Bash scripts tested (exact round trip incl. CRLF/binary/empty files, tamper, truncation, CRLF repair, path traversal, private-key guard)
-- [x] Bundle/restore scripts tested (format, CLI round trip, git changed-files mode, safety)
+- [x] `recreate-app.sh` + `tools/build-all-code.sh`: entire app first, then only changed files; checksummed, plain text where exact, base64 otherwise
+- [x] Hand-over scripts tested (first/entire, increments, removals, tamper, line-ending changes, path traversal, self-update, secrets never packed)
 
 ## H. Release
 

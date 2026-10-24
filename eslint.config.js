@@ -19,12 +19,6 @@ export default tseslint.config(
     },
   },
   {
-    files: ['scripts/**/*.mjs'],
-    languageOptions: {
-      globals: { Buffer: 'readonly', TextDecoder: 'readonly' },
-    },
-  },
-  {
     files: ['tests/**/*.ts'],
     rules: { 'no-console': 'off' },
   },

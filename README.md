@@ -22,7 +22,6 @@ npm run build && npm start  # production
 | `npm test`                                            | unit + integration + e2e                   |
 | `npm run test:unit` / `test:integration` / `test:e2e` | one layer                                  |
 | `npm run test:coverage`                               | all layers with a coverage gate            |
-| `npm run bundle` / `bundle:all` / `restore -- <file>` | see "Bundle and restore"                   |
 
 ## Postgres: the existing database
 
@@ -114,53 +113,42 @@ http (routes, auth, validation)  →  services (rules)  →  ports ← infra (Ku
 
 ## Tests
 
-| Layer       | Where               | What is real                                                                              |
-| ----------- | ------------------- | ----------------------------------------------------------------------------------------- |
-| Unit        | `tests/unit`        | One module; everything else faked                                                         |
-| Integration | `tests/integration` | Express routes + services + SQL (`pg-mem`, the shipped migration) + HTTP devfile registry |
-| End to end  | `tests/e2e`         | A listening server driven only over HTTP through whole user journeys                      |
+| Layer       | Where               | What is real                                                                                       |
+| ----------- | ------------------- | -------------------------------------------------------------------------------------------------- |
+| Unit        | `tests/unit`        | One module; everything else faked                                                                  |
+| Integration | `tests/integration` | Express routes + services + SQL (`pg-mem`, with a test-only table fixture) + HTTP devfile registry |
+| End to end  | `tests/e2e`         | A listening server driven only over HTTP through whole user journeys                               |
 
 The cluster is always in memory: nothing here talks to a real OpenShift. Run a smoke test against your dev
 cluster before first release (see "Not verified").
 
-## One text file for the whole app (`pack.sh` / `unpack.sh`)
+## Hand-over to another computer (`recreate-app.sh`, `all-app-code.txt`)
 
-To move the app anywhere with just **two files** (`all-code-file.txt` and `unpack.sh`), no git or zip needed:
-
-```bash
-bash pack.sh                                   # everything needed to run, build and test → all-code-file.txt
-bash unpack.sh all-code-file.txt -o /c/my/app  # rebuild the whole app there, files exactly as they are
-cd /c/my/app && npm ci && npm test && npm run build && npm start
-```
-
-On Windows use Git Bash (paths like `/c/my/app`). Needs only bash, awk and coreutils.
-
-- **Included:** `src`, `tests`, `scripts`, `docs`, `helm`, kustomize folders, `certs/` (if present), `package.json`,
-  `package-lock.json`, all config files, `Dockerfile`, `.env.example`, `README.md`, `pack.sh`, `unpack.sh`.
-- **Never included:** `node_modules`, `dist`, `coverage`, `.git`, `legacy`, `.env*` (secrets). `pack.sh` also refuses
-  to pack any file that contains a private key.
-- **Safe to run:** every file is verified against its SHA-256 before anything is written; existing files that differ
-  are kept unless you pass `--force`; `--dry-run` previews; `--list` lists. Paths that could escape the target folder
-  are rejected. If an editor or git converted the text file to CRLF line endings, `unpack.sh` converts it back, but only
-  when every checksum then matches. `.gitattributes` keeps the `.sh` files LF so bash works on Windows checkouts.
-- Verified by rebuilding the app from the text file in an empty folder and running `npm ci`, typecheck, lint, all
-  tests and the build there.
-
-## Bundle and restore (changed files only, Node)
-
-Pack changed files into one text file, and rebuild them from it elsewhere:
+The app moves between computers as **one text file**, `all-app-code.txt`, and one script, `recreate-app.sh`.
+The text file is made for you (by Claude, with `tools/build-all-code.sh`); you only run the script:
 
 ```bash
-node scripts/bundle.mjs                 # files added/modified since the last commit → workspace-mgr.bundle.txt
-node scripts/bundle.mjs --all           # every project file
-node scripts/restore.mjs workspace-mgr.bundle.txt --out ../copy            # recreate
-node scripts/restore.mjs workspace-mgr.bundle.txt --out ../copy --dry-run  # preview
-node scripts/restore.mjs workspace-mgr.bundle.txt --list                   # inspect
+bash recreate-app.sh -f             # inside the app folder: writes the files of ./all-app-code.txt, overwriting
+bash recreate-app.sh -f --prune     # also delete files that were removed from the app
+bash recreate-app.sh -n             # dry run: show what would happen
+bash recreate-app.sh p.txt ./out    # another input file / another folder (existing files are kept without -f)
 ```
 
-Every file is verified (size + SHA-256) before anything is written; existing files that differ are only
-overwritten with `--force`; `node_modules`, `dist`, `.env*` (except `.env.example`) are never bundled;
-a bundle whose line endings were converted to CRLF is repaired only when the checksums prove it exact.
+- **First hand-over:** the entire application. **Every later one:** only the new and changed files, plus a list of
+  files that were removed (`/_REMOVED.txt`). It ends with what to run next (`npm install`, `npm run build`, ...) when
+  something relevant changed.
+- **New empty folder:** put `recreate-app.sh` and `all-app-code.txt` in it and run `bash recreate-app.sh -f`, then
+  `npm ci && npm test && npm run build && npm start`.
+- **Format:** `/path/to/file`, the file's content, a blank line, next file. Files that cannot be shown as exact plain
+  text (CRLF line endings, no final newline, odd names) are stored as base64 after `@@BINARY-SECTION`; the plain files
+  are LF, so an editor, e-mail or git changing line endings cannot damage anything.
+- **Safe:** the text file ends with a SHA-256 for every file; they are all checked in a temp folder before your files are
+  touched. Existing files that differ are kept unless you pass `-f`. Paths that could escape the folder are rejected.
+  `recreate-app.sh` never replaces itself while running; a newer version is saved as `recreate-app.sh.new`.
+- **Never in a hand-over:** `node_modules`, `dist`, `coverage`, `.git`, `legacy`, `tools`, `.env*` (secrets), private keys.
+- **For the maintainer:** `bash tools/build-all-code.sh` builds the next hand-over (entire app the first time, then
+  only changes; `--full`, `--list`, `--redo` and `--keep-state` exist). What the other computer has is remembered in
+  `.handover-state` (not committed). Before saving, the file is recreated in a temp folder and compared byte for byte.
 
 ## Assumptions (my defaults; please confirm)
 
