@@ -50,9 +50,9 @@ describe('error handler', () => {
     expect(res.body).toEqual({ error: 'taken', message: 'taken', code: 'PAT_EXISTS' });
   });
 
-  it('logs 5xx AppErrors but not 4xx', () => {
+  it('logs both server and client failures', () => {
     expect(handle(new UpstreamError('cluster down')).logs).toHaveLength(1);
-    expect(handle(new BadRequestError('bad')).logs).toHaveLength(0);
+    expect(handle(new BadRequestError('bad')).logs).toHaveLength(1);
   });
 
   it('maps body-parser failures', () => {
@@ -92,7 +92,13 @@ describe('error handler', () => {
     notFoundHandler(
       { method: 'GET', path: '/nope' } as Request,
       res as unknown as Response,
-      (() => undefined) as NextFunction,
+      ((error: unknown) =>
+        createErrorHandler(createLogger('silent'))(
+          error,
+          { method: 'GET', path: '/nope' } as Request,
+          res as unknown as Response,
+          (() => undefined) as NextFunction,
+        )) as NextFunction,
     );
     expect(res.statusCode).toBe(404);
     expect(res.body).toEqual(errorBody('Route not found: GET /nope', 'ROUTE_NOT_FOUND'));

@@ -6,7 +6,7 @@ import { asyncHandler } from '../http/errors.js';
 
 export function projectController(container: Container) {
   return {
-    list: asyncHandler(async (req, res) => {
+    list: asyncHandler(async function projectList(req, res) {
       const csiid = optionalCsiid(req);
       const projects = await container.namespaces.listProjects(getSoeid(res));
       res.json(csiid ? projects.filter((project) => project.csiid === csiid) : projects);

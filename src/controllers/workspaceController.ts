@@ -8,15 +8,15 @@ import { parseCsiid } from '../utils/names.js';
 
 export function workspaceController(container: Container) {
   return {
-    list: asyncHandler(async (req, res) => {
+    list: asyncHandler(async function workspaceList(req, res) {
       const csiid = optionalCsiid(req);
       const workspaces = await container.workspaces.list(getSoeid(res));
       res.json(csiid ? workspaces.filter((workspace) => workspace.csiid === csiid) : workspaces);
     }),
-    get: asyncHandler(async (req, res) => {
+    get: asyncHandler(async function workspaceGet(req, res) {
       res.json(await container.workspaces.get(getSoeid(res), param(req, 'id')));
     }),
-    create: asyncHandler(async (req, res) => {
+    create: asyncHandler(async function workspaceCreate(req, res) {
       const body = parse(createWorkspaceSchema, req.body);
       const workspace = await container.workspaces.create({
         soeid: getSoeid(res),
@@ -29,17 +29,17 @@ export function workspaceController(container: Container) {
       });
       res.status(200).json(workspace);
     }),
-    remove: asyncHandler(async (req, res) => {
+    remove: asyncHandler(async function workspaceRemove(req, res) {
       const id = param(req, 'id');
       await container.workspaces.delete(getSoeid(res), id);
       res.json({ message: `Workspace with id ${id} is terminating.` });
     }),
-    start: asyncHandler(async (req, res) => {
+    start: asyncHandler(async function workspaceStart(req, res) {
       const id = param(req, 'id');
       await container.workspaces.start(getSoeid(res), id);
       res.json({ message: `Workspace with id ${id} is starting.` });
     }),
-    stop: asyncHandler(async (req, res) => {
+    stop: asyncHandler(async function workspaceStop(req, res) {
       const id = param(req, 'id');
       await container.workspaces.stop(getSoeid(res), id);
       res.json({ message: `Workspace with id ${id} is stopping.` });

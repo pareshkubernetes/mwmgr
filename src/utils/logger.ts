@@ -32,15 +32,30 @@ export interface LoggerOptions {
   now?: () => Date;
 }
 
-function logSource(error?: Error): { file: string; function: string } {
+function logSource(error?: Error): { file: string; function: string; line?: number } {
+  let fallback: { file: string; function: string; line?: number } | undefined;
   for (const frame of (error?.stack ?? new Error().stack ?? '').split('\n').slice(1)) {
-    const match = /^\s*at (?:(.*?) \()?(.+?):\d+:\d+\)?$/.exec(frame);
+    const match = /^\s*at (?:(.*?) \()?(.+?):(\d+):\d+\)?$/.exec(frame);
     if (!match) continue;
     const path = match[2]?.replaceAll('\\', '/') ?? '';
-    if (/\/(logger\.(?:ts|js))$/.test(path) || path.startsWith('node:')) continue;
-    return { file: path.split('/').at(-1) || 'unknown', function: match[1] || 'anonymous' };
+    if (
+      /\/utils\/(?:logger|errors|k8s-errors)\.(?:ts|js)$/.test(path) ||
+      path.startsWith('node:') ||
+      path.includes('/node_modules/')
+    )
+      continue;
+    const source = {
+      file: path.split('/').at(-1) || 'unknown',
+      function: match[1] || 'module',
+      line: Number(match[3]),
+    };
+    if (!match[1] || /anonymous/.test(match[1])) {
+      fallback ??= { ...source, function: 'module' };
+      continue;
+    }
+    return source;
   }
-  return { file: 'unknown', function: 'anonymous' };
+  return fallback ?? { file: 'unknown', function: 'module' };
 }
 
 export function redact(value: unknown, depth = 0): unknown {
@@ -68,12 +83,14 @@ export function createLogger(
     // `success` is an info-level message that is shown in green
     const severity: Exclude<LogLevel, 'silent'> = kind === 'success' ? 'info' : kind;
     if (ORDER[severity] < ORDER[level]) return;
+    let source = options.source ?? logSource(fields?.error instanceof Error ? fields.error : undefined);
+    if (source.file === 'unknown') source = logSource();
     const merged = {
       ...(redact(bindings) as LogFields),
       ...(redact(
         fields?.error instanceof Error ? { ...fields, error: fields.error.message } : (fields ?? {}),
       ) as LogFields),
-      ...(options.source ?? logSource(fields?.error instanceof Error ? fields.error : undefined)),
+      ...source,
     };
     const time = now();
     const timestamp = formatLocalTime(time);

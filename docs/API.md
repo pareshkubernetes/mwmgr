@@ -38,7 +38,6 @@ regular user tokens can access only their own `:soeid` resources.
 | GET                    | `/api/v1/readyz`                      | Kubernetes, deployment cluster and database readiness |
 | POST                   | `/api/v1/login`                       | Existing username/password login                      |
 | GET                    | `/api/v1/catalog`                     | Stack catalog                                         |
-| GET                    | `/api/v1/:soeid/stacks`               | Stack catalog for an authorized user                  |
 | GET, POST              | `/api/v1/:soeid/projects`             | List or provision workspace projects                  |
 | GET, POST              | `/api/v1/:soeid/workspaces`           | List or create workspaces                             |
 | GET, DELETE            | `/api/v1/:soeid/workspaces/:id`       | Read or terminate a workspace                         |
@@ -151,9 +150,15 @@ Production writes one redacted JSON entry per line to `logs/app-YYYY-MM-DD.log`.
 Each entry includes `timestamp` (`YYYY-MM-DD HH:MM:SS` in the process's local timezone),
 `file`, and `function`. The ISO `time` field remains available for precise filtering.
 Readable console and log-search output uses
-`[timestamp] [File: filename] [Function: functionName]`. Continuation lines carry the
+`[timestamp] [filename:line] [functionName]`. Continuation lines carry the
 same prefix. Source details come from the log call, or the original error stack when
-an Error object is provided; unnamed callbacks appear as `anonymous`.
+an Error object is provided. Application callbacks have descriptive function names;
+top-level execution without a named function is identified as `module`.
+Client failures (400/401/403/404/409) are logged as warnings with status, error code,
+message, request ID, and source location. Server failures are logged as errors.
+JWT errors distinguish expired, not-yet-valid, invalid-signature, and malformed tokens.
+Use the Workspace Manager token from `/api/v1/login` for these APIs; cluster tokens
+authenticate the server's Kubernetes requests and are separate credentials.
 Dates are UTC and files switch automatically at midnight. Console formatting is
 independent. `LOG_DIRECTORY` selects the directory. Mount a writable volume there
 when using a read-only filesystem, and persistent storage if logs must survive pod

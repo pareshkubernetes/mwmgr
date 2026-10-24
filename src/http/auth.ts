@@ -36,24 +36,41 @@ export function getPrincipal(res: Response): Principal {
 
 /** `Authorization: Bearer <jwt>` → `res.locals.principal`. */
 export function authenticate(auth: AppConfig['auth']): RequestHandler {
-  return (req: Request, res: Response, next: NextFunction) => {
+  return function authenticateRequest(req: Request, res: Response, next: NextFunction) {
     const match = /^Bearer (\S+)$/.exec(req.headers.authorization ?? '');
-    if (!match?.[1]) return next(new UnauthorizedError('A bearer token is required for authentication'));
+    if (!match?.[1])
+      return next(
+        new UnauthorizedError(
+          'A Workspace Manager bearer token is required. Obtain one using /api/v1/login and send Authorization: Bearer <token>.',
+        ),
+      );
     try {
       const decoded = jwt.verify(match[1], auth.secretKey, { algorithms: ['HS256'] });
       if (typeof decoded === 'string' || typeof decoded.sub !== 'string') throw new Error('malformed claims');
       const role = decoded.role === 'admin' ? 'admin' : 'user';
       res.locals.principal = { soeid: decoded.sub, role } satisfies Principal;
       return next();
-    } catch {
-      return next(new UnauthorizedError('Invalid token'));
+    } catch (error) {
+      const detail =
+        error instanceof jwt.TokenExpiredError
+          ? 'The Workspace Manager authentication token has expired.'
+          : error instanceof jwt.NotBeforeError
+            ? 'The Workspace Manager authentication token is not valid yet.'
+            : error instanceof jwt.JsonWebTokenError && error.message === 'invalid signature'
+              ? 'Workspace Manager token signature verification failed.'
+              : 'The Workspace Manager authentication token is malformed or unsupported.';
+      return next(
+        new UnauthorizedError(
+          `${detail} Obtain a new token using /api/v1/login and send it as Authorization: Bearer <token>.`,
+        ),
+      );
     }
   };
 }
 
 /** Validates `:soeid` and makes sure the caller may act for that user (admins may act for anyone). */
 export function authorizeSoeid(): RequestHandler {
-  return (req: Request, res: Response, next: NextFunction) => {
+  return function authorizeUser(req: Request, res: Response, next: NextFunction) {
     try {
       const soeid = parseSoeid(req.params.soeid ?? '');
       const principal = getPrincipal(res);

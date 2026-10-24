@@ -41,7 +41,9 @@ export function createPgPool(config: AppConfig['postgres'], logger: Logger = sil
     statement_timeout: 5000,
   });
   // An idle client dropped by the server emits 'error'; unhandled, it would crash the process.
-  pool.on('error', (error) => logger.error('postgres.pool_error', { error: errorMessage(error) }));
+  pool.on('error', function onPoolError(error) {
+    logger.error('postgres.pool_error', { error });
+  });
   return pool;
 }
 

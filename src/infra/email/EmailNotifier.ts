@@ -1,5 +1,4 @@
 import type { AppConfig } from '../../config/env.js';
-import { errorMessage } from '../../utils/errors.js';
 import { silentLogger, type Logger } from '../../utils/logger.js';
 import type {
   NamespaceCreatedEmail,
@@ -98,7 +97,7 @@ export class EmailNotifier implements Notifier {
       if (!response.ok) throw new Error(`mail service answered ${response.status}`);
       this.logger.success('email.sent', { soeid, subject });
     } catch (error) {
-      this.logger.error('email.failed', { soeid, subject, error: errorMessage(error) });
+      this.logger.error('email.failed', { soeid, subject, error: error });
     }
   }
 }

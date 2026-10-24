@@ -25,7 +25,7 @@ const bodySchema = z.strictObject({
 
 export function supportController(container: Container) {
   return {
-    apply: asyncHandler(async (req, res) => {
+    apply: asyncHandler(async function supportApply(req, res) {
       const body = parse(bodySchema, req.body);
       res.json(await container.support.apply(body));
     }),

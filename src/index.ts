@@ -3,7 +3,6 @@ import { loadConfig, startupSummary } from './config/env.js';
 import { buildContainer, createProductionDependencies } from './container.js';
 import { createApp } from './app.js';
 import { createLogger } from './utils/logger.js';
-import { errorMessage } from './utils/errors.js';
 import { flushDailyLogs } from './config/daily-logs.js';
 
 async function main(): Promise<void> {
@@ -32,9 +31,9 @@ async function main(): Promise<void> {
     );
     return { ...adapters, metrics: dependencies.metrics };
   });
-  const server: Server = createApp(container).listen(config.port, () =>
-    logger.success('server.listening', startupSummary(config)),
-  );
+  const server: Server = createApp(container).listen(config.port, function onListening() {
+    logger.success('server.listening', startupSummary(config));
+  });
 
   let shuttingDown = false;
   const shutdown = (signal: string): void => {
@@ -53,7 +52,13 @@ async function main(): Promise<void> {
   process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
-main().catch((error: unknown) => {
-  process.stderr.write(`Fatal: ${errorMessage(error)}\n`);
-  process.exit(1);
+main().catch(function onStartupError(error: unknown) {
+  const logger = createLogger(
+    'error',
+    (line) => process.stderr.write(`${line}\n`),
+    {},
+    { format: 'pretty', color: false, dailyFiles: true },
+  );
+  logger.error('server.start_failed', { error });
+  void flushDailyLogs().then(() => process.exit(1));
 });

@@ -24,19 +24,20 @@ function failureDetails(error: unknown) {
 
 export function healthCheckController(container: Container) {
   return {
-    health: (_req, res) => {
+    health: function health(_req, res) {
       res.send('OK');
     },
-    ready: asyncHandler(async (_req, res) => {
+    ready: asyncHandler(async function healthCheckReady(_req, res) {
       const checks: Record<string, string> = {};
-      const failed = (dependency: string) => (error: unknown) => {
-        checks[dependency] = 'unavailable';
-        container.logger.error('readiness.check_failed', {
-          dependency,
-          requestId: res.locals.requestId as string | undefined,
-          ...failureDetails(error),
-        });
-      };
+      const failed = (dependency: string) =>
+        function reportReadinessFailure(error: unknown) {
+          checks[dependency] = 'unavailable';
+          container.logger.error('readiness.check_failed', {
+            dependency,
+            requestId: res.locals.requestId as string | undefined,
+            ...failureDetails(error),
+          });
+        };
       await Promise.all([
         container.kube.ping().then(() => (checks.kubernetes = 'ok'), failed('kubernetes')),
         container.metrics.ping().then(() => (checks.postgres = 'ok'), failed('postgres')),

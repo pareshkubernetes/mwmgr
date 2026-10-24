@@ -112,7 +112,7 @@ export class NamespaceService {
     try {
       await this.reconcile(soeid, name);
     } catch (error) {
-      this.logger.error('namespace.provision_failed', { soeid, namespace: name });
+      this.logger.error('namespace.provision_failed', { soeid, namespace: name, error });
       await this.kube.deleteNamespace(name).catch(() => false);
       throw error;
     }

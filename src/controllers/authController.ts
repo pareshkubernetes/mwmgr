@@ -6,7 +6,7 @@ import { UnauthorizedError } from '../utils/errors.js';
 
 export function authController(container: Container) {
   return {
-    login: (req, res, next) => {
+    login: function login(req, res, next) {
       try {
         const { username, password } = parse(loginSchema, req.body);
         if (!checkAdminCredentials(container.config.auth, username, password)) {

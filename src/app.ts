@@ -9,15 +9,14 @@ export const API_PREFIX = '/api/v1';
 export function createApp(c: Container): Express {
   const app = express();
   app.disable('x-powered-by');
-  app.use(express.json({ limit: '256kb' }));
 
-  app.use((req, res, next) => {
+  app.use(function requestContext(req, res, next) {
     const incoming = req.header('x-request-id');
     const requestId = incoming && /^[A-Za-z0-9-]{8,64}$/.test(incoming) ? incoming : randomUUID();
     res.locals.requestId = requestId;
     res.setHeader('x-request-id', requestId);
     const started = Date.now();
-    res.on('finish', () => {
+    res.on('finish', function logRequest() {
       // Match request severity to the HTTP status.
       const outcome = res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'success';
       c.logger[outcome]('request', {
@@ -32,6 +31,7 @@ export function createApp(c: Container): Express {
     });
     next();
   });
+  app.use(express.json({ limit: '256kb' }));
 
   const api = baseRouter(c);
   app.use(API_PREFIX, api);

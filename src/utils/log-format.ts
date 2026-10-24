@@ -107,8 +107,9 @@ function requestMessage(
 
 /** One log entry as text. Multi-line entries end with a blank line so that entries stay visually separate. */
 export function formatPretty(entry: LogEntry, color: boolean): string {
-  const { file = 'unknown', function: functionName = 'anonymous', ...data } = entry.fields;
-  const prefix = `[${formatLocalTime(entry.time)}] [File: ${oneLine(String(file))}] [Function: ${oneLine(String(functionName))}]`;
+  const { file = 'unknown', function: functionName = 'module', line, ...data } = entry.fields;
+  const location = line === undefined ? String(file) : `${String(file)}:${String(line)}`;
+  const prefix = `[${formatLocalTime(entry.time)}] [${oneLine(location)}] [${oneLine(String(functionName))}]`;
   const head = `${prefix} | ${BADGE[entry.kind]} | `;
   const request = entry.event === 'request' ? requestMessage(data) : undefined;
   const fields = Object.entries(request ? request.rest : data).filter(([, v]) => v !== undefined);

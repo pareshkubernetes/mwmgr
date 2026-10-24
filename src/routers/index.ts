@@ -12,7 +12,6 @@ import logRouter from './logRouter.js';
 import namespaceRouter from './namespaceRouter.js';
 import patRouter from './patRouter.js';
 import projectRouter from './projectRouter.js';
-import stackRouter from './stackRouter.js';
 import supportRouter from './supportRouter.js';
 import workspaceRouter from './workspaceRouter.js';
 
@@ -31,7 +30,6 @@ export default function baseRouter(container: Container) {
   api.use('/catalog', authenticate(container.config.auth));
   api.use(catalogRouter(container));
   const user = Router({ mergeParams: true });
-  user.use(stackRouter(container));
   user.use(projectRouter(container));
   user.use(namespaceRouter(container));
   user.use(workspaceRouter(container));

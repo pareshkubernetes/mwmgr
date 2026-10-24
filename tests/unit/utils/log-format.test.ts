@@ -9,7 +9,7 @@ import {
 } from '../../../src/utils/log-format.js';
 
 const time = new Date(2026, 0, 2, 3, 4, 5, 678); // local time, as the formatter prints it
-const T = '[2026-01-02 03:04:05] [File: unknown] [Function: anonymous]';
+const T = '[2026-01-02 03:04:05] [unknown] [module]';
 const entry = (kind: LogKind, event: string, fields: Record<string, unknown> = {}): LogEntry => ({
   time,
   kind,

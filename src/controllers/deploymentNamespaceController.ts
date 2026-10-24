@@ -8,17 +8,17 @@ import { csiidFromDeploymentNamespace, parseCsiid } from '../utils/names.js';
 
 export function deploymentNamespaceController(container: Container) {
   return {
-    list: asyncHandler(async (req, res) => {
+    list: asyncHandler(async function deploymentNamespaceList(req, res) {
       const csiid = optionalCsiid(req);
       const projects = await container.deployments.list(getSoeid(res));
       res.json(csiid ? projects.filter((name) => csiidFromDeploymentNamespace(name) === csiid) : projects);
     }),
-    create: asyncHandler(async (req, res) => {
+    create: asyncHandler(async function deploymentNamespaceCreate(req, res) {
       const { csiid } = parse(csiidBodySchema, req.body);
       const result = await container.deployments.ensure(getSoeid(res), parseCsiid(csiid));
       res.status(result.exists ? 200 : 201).json(result);
     }),
-    remove: asyncHandler(async (_req: Request, res: Response) => {
+    remove: asyncHandler(async function deploymentNamespaceRemove(_req: Request, res: Response) {
       res.json(await container.deployments.delete(getSoeid(res)));
     }),
   } satisfies Record<string, RequestHandler>;

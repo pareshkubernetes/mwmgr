@@ -15,7 +15,7 @@ const query = z.strictObject({
 });
 export function logController() {
   return {
-    list: asyncHandler(async (req, res) => {
+    list: asyncHandler(async function logList(req, res) {
       const options = parse(query, req.query);
       const result = await queryLogs(options);
       if (options.format === 'text') {

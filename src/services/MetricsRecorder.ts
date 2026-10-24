@@ -36,7 +36,7 @@ export class MetricsRecorder {
         soeid: record.soeid,
         eventtype: record.eventtype,
         resourcetype: record.resourcetype,
-        error: errorMessage(error),
+        error: error,
       });
     } finally {
       if (timer) clearTimeout(timer);

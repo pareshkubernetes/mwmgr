@@ -23,9 +23,7 @@ describe('versioned provisioning and discovery', () => {
     expect(projects.body).toHaveLength(1);
     expect(projects.body[0].csiid).toBe('1002');
     expect((await t.api('get', '/api/v1/pp1/projects?csiid=bad')).status).toBe(400);
-    expect((await t.api('get', '/api/v1/pp1/stacks')).body).toEqual(
-      (await t.api('get', '/api/v1/catalog')).body,
-    );
+    expect((await t.api('get', '/api/v1/pp1/stacks')).status).toBe(404);
     expect((await t.api('get', '/api/v1/pp1/workspaces?csiid=1001')).body).toEqual([]);
   });
   it('filters deployment projects on the correct cluster', async () => {
@@ -45,14 +43,12 @@ describe('support resources', () => {
       .send({ csiid: '1001' });
     const body = { soeid: 'pp1', csiid: '1001', target };
     expect((await t.api('put', '/api/v1/support/resources').send(body)).status).toBe(200);
-    const response = await t
-      .api('put', '/api/v1/support/resources')
-      .send({
-        ...body,
-        resources: [
-          { kind: 'ResourceQuota', metadata: { name: 'custom-quota' }, spec: { hard: { pods: '4' } } },
-        ],
-      });
+    const response = await t.api('put', '/api/v1/support/resources').send({
+      ...body,
+      resources: [
+        { kind: 'ResourceQuota', metadata: { name: 'custom-quota' }, spec: { hard: { pods: '4' } } },
+      ],
+    });
     expect(response.status).toBe(200);
     const kube = target === 'workspace' ? t.fakes.kube : deploy;
     expect(await kube.get('ResourceQuota', response.body.namespace, 'custom-quota')).toMatchObject({
@@ -82,14 +78,12 @@ describe('support resources', () => {
   it('rejects invalid resource kinds', async () => {
     expect(
       (
-        await t
-          .api('put', '/api/v1/support/resources')
-          .send({
-            soeid: 'pp1',
-            csiid: '1001',
-            target: 'workspace',
-            resources: [{ kind: 'Secret', metadata: { name: 'token' } }],
-          })
+        await t.api('put', '/api/v1/support/resources').send({
+          soeid: 'pp1',
+          csiid: '1001',
+          target: 'workspace',
+          resources: [{ kind: 'Secret', metadata: { name: 'token' } }],
+        })
       ).status,
     ).toBe(400);
   });

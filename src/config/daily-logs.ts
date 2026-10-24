@@ -2,6 +2,7 @@ import { appendFile, mkdir } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { resolve, join } from 'node:path';
+import { formatLocalTime } from '../utils/log-format.js';
 
 export const logDirectory = (): string => resolve(process.env.LOG_DIRECTORY || 'logs');
 let pending: Promise<void> = Promise.resolve();
@@ -17,8 +18,10 @@ export function appendDailyLog(line: string, time: Date): void {
         mode: 0o600,
       });
     })
-    .catch(() => {
-      process.stderr.write('Unable to write daily application log\n');
+    .catch(function reportLogWriteFailure() {
+      process.stderr.write(
+        `[${formatLocalTime(new Date())}] [daily-logs.ts] [reportLogWriteFailure] | ERROR | Unable to write daily application log\n`,
+      );
     });
 }
 

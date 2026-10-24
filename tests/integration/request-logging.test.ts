@@ -1,4 +1,5 @@
 import request from 'supertest';
+import jwt from 'jsonwebtoken';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { COLORS, RESET } from '../../src/utils/log-format.js';
 import { createLogger } from '../../src/utils/logger.js';
@@ -32,6 +33,39 @@ const strip = (line: string) =>
     .replaceAll(RESET, '');
 
 describe('what the terminal shows for each API call', () => {
+  it.each(['expired', 'signature', 'malformed'])(
+    'logs %s JWT failures at authenticateRequest with a useful response',
+    async (kind) => {
+      const token =
+        kind === 'expired'
+          ? jwt.sign({}, t.container.config.auth.secretKey, { subject: 'pp1', expiresIn: -1 })
+          : kind === 'signature'
+            ? jwt.sign({}, 'different-signing-key', { subject: 'pp1' })
+            : 'invalid-token';
+      const response = await request(t.app)
+        .post('/api/v1/pp1/workspaces')
+        .set('Authorization', `Bearer ${token}`)
+        .send({});
+      expect(response.status).toBe(401);
+      expect(response.body.message).toMatch(
+        kind === 'signature' ? /signature verification failed/ : new RegExp(kind),
+      );
+      const failure = strip(raw.find((line) => line.includes('request.failed')) as string);
+      expect(failure).toMatch(/\[auth\.ts:\d+\] \[authenticateRequest\]/);
+      expect(failure).toContain(response.body.message);
+      expect(failure).toContain('UNAUTHORIZED');
+      expect(raw.join('\n')).not.toContain(token);
+      expect(raw.join('\n')).not.toMatch(/anonymous|File:|Function:/);
+      expect(t.fakes.kube.calls).not.toContain('createNamespace');
+    },
+  );
+  it('logs schema failures at parse with their validation detail', async () => {
+    const response = await t.api('post', '/api/v1/pp1/workspaces').send({ csiid: 'bad' });
+    expect(response.status).toBe(400);
+    const failure = strip(raw.find((line) => line.includes('request.failed')) as string);
+    expect(failure).toMatch(/\[schemas\.ts:\d+\] \[parse\]/);
+    expect(failure).toContain(response.body.message);
+  });
   it('a successful call is green, with method, path, status and duration', async () => {
     await request(t.app).get('/api/v1/healthz');
     const line = await requestLine('/api/v1/healthz');

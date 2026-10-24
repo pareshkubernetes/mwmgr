@@ -1,4 +1,3 @@
-import { errorMessage } from '../../utils/errors.js';
 import { silentLogger, type Logger } from '../../utils/logger.js';
 import type { UserDirectory } from '../ports.js';
 import type { FetchFn } from './EmailNotifier.js';
@@ -24,7 +23,7 @@ export class GraphqlUserDirectory implements UserDirectory {
       const json = (await response.json()) as { data?: { users?: { firstName?: string }[] } };
       return json.data?.users?.[0]?.firstName || undefined;
     } catch (error) {
-      this.logger.warn('userdirectory.failed', { soeid, error: errorMessage(error) });
+      this.logger.warn('userdirectory.failed', { soeid, error: error });
       return undefined;
     }
   }

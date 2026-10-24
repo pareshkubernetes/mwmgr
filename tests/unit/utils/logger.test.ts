@@ -116,11 +116,11 @@ describe('logger', () => {
       logger.info('i');
       logger.debug('d');
       expect(out).toEqual([
-        '\u001b[31m[2026-01-02 03:04:05] [File: logger.test.ts] [Function: testLog] | ERROR | e\u001b[0m',
-        '\u001b[38;5;208m[2026-01-02 03:04:05] [File: logger.test.ts] [Function: testLog] | WARN  | w\u001b[0m',
-        '\u001b[32m[2026-01-02 03:04:05] [File: logger.test.ts] [Function: testLog] | OK    | s\u001b[0m',
-        '\u001b[97m[2026-01-02 03:04:05] [File: logger.test.ts] [Function: testLog] | INFO  | i\u001b[0m',
-        '\u001b[97m[2026-01-02 03:04:05] [File: logger.test.ts] [Function: testLog] | DEBUG | d\u001b[0m',
+        '\u001b[31m[2026-01-02 03:04:05] [logger.test.ts] [testLog] | ERROR | e\u001b[0m',
+        '\u001b[38;5;208m[2026-01-02 03:04:05] [logger.test.ts] [testLog] | WARN  | w\u001b[0m',
+        '\u001b[32m[2026-01-02 03:04:05] [logger.test.ts] [testLog] | OK    | s\u001b[0m',
+        '\u001b[97m[2026-01-02 03:04:05] [logger.test.ts] [testLog] | INFO  | i\u001b[0m',
+        '\u001b[97m[2026-01-02 03:04:05] [logger.test.ts] [testLog] | DEBUG | d\u001b[0m',
       ]);
     });
 
@@ -129,8 +129,8 @@ describe('logger', () => {
       logger.info('a', { n: 1 });
       logger.warn('b');
       expect(out).toEqual([
-        `[2026-01-02 03:04:05] [File: logger.test.ts] [Function: testLog] | INFO  | ${'a'.padEnd(30)} | n=1`,
-        '[2026-01-02 03:04:05] [File: logger.test.ts] [Function: testLog] | WARN  | b',
+        `[2026-01-02 03:04:05] [logger.test.ts] [testLog] | INFO  | ${'a'.padEnd(30)} | n=1`,
+        '[2026-01-02 03:04:05] [logger.test.ts] [testLog] | WARN  | b',
       ]);
     });
 

@@ -9,10 +9,10 @@ import { parse } from '../http/schemas.js';
 
 export function configurationController(container: Container) {
   return {
-    view: asyncHandler(async (_req, res) => {
+    view: asyncHandler(async function configurationView(_req, res) {
       res.json({ settings: runtimeSettingsView(container.config), persistence: 'process-lifetime' });
     }),
-    update: asyncHandler(async (req, res) => {
+    update: asyncHandler(async function configurationUpdate(req, res) {
       const body = parse(runtimeSettingsSchema, req.body);
       container.reconfigure(applyRuntimeSettings(container.config, body));
       container.logger.info('configuration.updated', { keys: Object.keys(body) });

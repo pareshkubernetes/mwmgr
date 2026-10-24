@@ -6,7 +6,7 @@ import { parseCsiid } from '../utils/names.js';
 
 export function namespaceController(container: Container) {
   return {
-    create: asyncHandler(async (req, res) => {
+    create: asyncHandler(async function namespaceCreate(req, res) {
       const { csiid } = parse(csiidBodySchema, req.body);
       const result = await container.namespaces.ensure(getSoeid(res), parseCsiid(csiid));
       res.status(result.created ? 201 : 200).json(result);

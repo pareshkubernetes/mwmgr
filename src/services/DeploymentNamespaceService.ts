@@ -11,7 +11,6 @@ import {
 } from '../constants/kubernetes-configs.js';
 import type { KubeObject } from '../types.js';
 import type { KubeGateway, Notifier } from '../infra/ports.js';
-import { errorMessage } from '../utils/errors.js';
 import { silentLogger, type Logger } from '../utils/logger.js';
 import { csiidFromDeploymentNamespace, deploymentNamespace } from '../utils/names.js';
 import type { MetricsRecorder } from './MetricsRecorder.js';
@@ -142,7 +141,7 @@ export class DeploymentNamespaceService {
         this.logger.error('deployment_namespace.delete_failed', {
           soeid,
           namespace: name,
-          error: errorMessage(error),
+          error: error,
         });
         failed.push(name);
       }
