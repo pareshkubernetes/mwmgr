@@ -17,6 +17,7 @@ export interface BuildWorkspaceArgs {
   editor: EditorKey;
   /** Full editor id as the Dev Spaces dashboard knows it, e.g. `che-incubator/che-code/latest`. */
   editorId: string;
+  editorRegistryUrl?: string;
   devSpacesServiceFqdn: string;
   repositoryUrl?: string;
   repositoryBranch?: string;
@@ -112,7 +113,7 @@ export function buildDevWorkspaceObject(a: BuildWorkspaceArgs): DevWorkspaceReso
       contributions: [
         {
           name: 'ide',
-          uri: `${a.devSpacesServiceFqdn}/dashboard/api/editors/devfile?che-editor=${a.editorId}`,
+          uri: `${(a.editorRegistryUrl ?? `${a.devSpacesServiceFqdn.replace(/\/$/, '')}/plugin-registry/v3`).replace(/\/$/, '')}/plugins/${a.editorId}/devfile.yaml`,
         },
       ],
     },

@@ -93,6 +93,7 @@ export function buildContainer(
       {
         limits: config.limits,
         editors: config.devreg.editors,
+        editorRegistryUrl: config.devreg.editorRegistryUrl,
         devSpacesServiceFqdn: config.cluster.devSpacesServiceFqdn,
       },
       clock,

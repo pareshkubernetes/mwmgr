@@ -19,6 +19,15 @@ const args = (over: Partial<Parameters<typeof buildDevWorkspaceObject>[0]> = {})
 });
 
 describe('buildDevWorkspaceObject', () => {
+  it('uses the configured internal plugin registry without a dashboard API URL', () => {
+    const dw = buildDevWorkspaceObject(
+      args({ editorRegistryUrl: 'http://internal-editor-registry:8080/v3/' }),
+    );
+    expect(dw.spec?.contributions?.[0]?.uri).toBe(
+      'http://internal-editor-registry:8080/v3/plugins/che-incubator/che-code/latest/devfile.yaml',
+    );
+    expect(dw.spec?.contributions?.[0]?.uri).not.toContain('/dashboard/api/');
+  });
   it('preserves lifecycle events and avoids setup command ID collisions', () => {
     const dw = buildDevWorkspaceObject(
       args({
@@ -64,7 +73,7 @@ describe('buildDevWorkspaceObject', () => {
     expect(dw.spec?.contributions).toEqual([
       {
         name: 'ide',
-        uri: 'https://devspaces.test/dashboard/api/editors/devfile?che-editor=che-incubator/che-code/latest',
+        uri: 'https://devspaces.test/plugin-registry/v3/plugins/che-incubator/che-code/latest/devfile.yaml',
       },
     ]);
   });
@@ -74,7 +83,7 @@ describe('buildDevWorkspaceObject', () => {
       args({ editor: 'intellij', editorId: 'che-incubator/che-idea-server/latest' }),
     );
     expect(dw.spec?.contributions?.[0]?.uri).toBe(
-      'https://devspaces.test/dashboard/api/editors/devfile?che-editor=che-incubator/che-idea-server/latest',
+      'https://devspaces.test/plugin-registry/v3/plugins/che-incubator/che-idea-server/latest/devfile.yaml',
     );
     expect(dw.spec?.contributions?.[0]?.uri).not.toMatch(/che-incubator.*che-incubator/);
   });

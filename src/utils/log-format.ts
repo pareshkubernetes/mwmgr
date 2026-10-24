@@ -1,4 +1,5 @@
 /** Readable terminal logs with timestamps and source locations. */
+import { logCategory, logMessage } from './log-message.js';
 
 export type LogKind = 'debug' | 'info' | 'success' | 'warn' | 'error';
 
@@ -109,7 +110,20 @@ function requestMessage(
 export function formatPretty(entry: LogEntry, color: boolean): string {
   const { file = 'unknown', function: functionName = 'module', line, ...data } = entry.fields;
   const location = line === undefined ? String(file) : `${String(file)}:${String(line)}`;
-  const prefix = `[${formatLocalTime(entry.time)}] [${oneLine(location)}] [${oneLine(String(functionName))}]`;
+  const diagnostic = entry.kind === 'error' || entry.kind === 'warn';
+  const prefix = diagnostic
+    ? `[${formatLocalTime(entry.time)}] [${oneLine(location)}] [${oneLine(String(functionName))}]`
+    : `[${formatLocalTime(entry.time)}] [${logCategory(entry.event)}]`;
+  const sentence = diagnostic ? undefined : logMessage(entry.event, data);
+  if (sentence) {
+    const text = `${prefix} ${oneLine(sentence)}`;
+    const details =
+      entry.event === 'server.listening'
+        ? renderBlock(data, BLOCK_INDENT).map((detail) => `${prefix} ${detail}`)
+        : [];
+    const lines = [text, ...details];
+    return lines.map((line) => (color ? `${COLORS[entry.kind]}${line}${RESET}` : line)).join('\n');
+  }
   const head = `${prefix} | ${BADGE[entry.kind]} | `;
   const request = entry.event === 'request' ? requestMessage(data) : undefined;
   const fields = Object.entries(request ? request.rest : data).filter(([, v]) => v !== undefined);

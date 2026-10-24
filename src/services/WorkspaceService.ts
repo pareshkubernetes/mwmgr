@@ -18,6 +18,7 @@ import type { NamespaceService } from './NamespaceService.js';
 export interface WorkspaceServiceOptions {
   limits: AppConfig['limits'];
   editors: AppConfig['devreg']['editors'];
+  editorRegistryUrl?: string;
   devSpacesServiceFqdn: string;
 }
 
@@ -128,6 +129,7 @@ export class WorkspaceService {
     this.assertCanCreateAnother(await this.listResources(soeid));
 
     const { name: namespace } = await this.namespaces.ensure(soeid, csiid);
+    this.logger.info('workspace.creating', { soeid, namespace, stack: input.devworkspaceValue });
     const { yaml, version } = await this.registry.getDevfile(input.devworkspaceValue, input.stackVersion);
     const devfile = applyEditorProfile(parseDevfile(yaml), input.editor);
     const body = buildDevWorkspaceObject({
@@ -139,6 +141,7 @@ export class WorkspaceService {
       devfile,
       editor: input.editor,
       editorId: this.editorId(input.editor),
+      editorRegistryUrl: this.options.editorRegistryUrl,
       devSpacesServiceFqdn: this.options.devSpacesServiceFqdn,
       repositoryUrl: input.repositoryUrl,
       repositoryBranch: input.repositoryBranch,
@@ -157,7 +160,13 @@ export class WorkspaceService {
       },
       () => this.kube.create<DevWorkspaceResource>('DevWorkspace', namespace, body),
     );
-    this.logger.success('workspace.created', { soeid, namespace, workspace: created.metadata?.name });
+    this.logger.success('workspace.created', {
+      soeid,
+      namespace,
+      workspace: created.metadata?.name,
+      version,
+      editor: input.editor,
+    });
     return toWorkspace(created);
   }
 
@@ -176,6 +185,11 @@ export class WorkspaceService {
   private async setStarted(soeid: string, dw: DevWorkspaceResource, started: boolean): Promise<Workspace> {
     const namespace = dw.metadata?.namespace ?? '';
     const name = dw.metadata?.name ?? '';
+    this.logger.info(started ? 'workspace.starting' : 'workspace.stopping', {
+      soeid,
+      namespace,
+      workspace: name,
+    });
     const resources = summarizeComponents(dw.spec?.template?.components);
     const patched = await this.recorder.track(
       {
@@ -196,6 +210,12 @@ export class WorkspaceService {
       namespace,
       workspace: name,
     });
+    if (!started)
+      this.logger.info('workspace.duration', {
+        soeid,
+        workspace: name,
+        duration: durationSince(runningSince(dw), this.clock.now()),
+      });
     return toWorkspace({ ...dw, ...patched, metadata: { ...dw.metadata, ...patched.metadata } });
   }
 
@@ -203,6 +223,7 @@ export class WorkspaceService {
     const dw = await this.find(soeid, id);
     const namespace = dw.metadata?.namespace ?? '';
     const name = dw.metadata?.name ?? '';
+    this.logger.info('workspace.deleting', { soeid, namespace, workspace: name });
     const resources = summarizeComponents(dw.spec?.template?.components);
 
     await this.recorder.track(

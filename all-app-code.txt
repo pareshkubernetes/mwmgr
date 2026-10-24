@@ -1,228 +1,7 @@
-# all-app-code.txt - updated files only - generated 2026-10-24T16:51:11Z
+# all-app-code.txt - updated files only - generated 2026-10-24T17:19:01Z
 # On the other computer, inside the app folder:   bash recreate-app.sh -f --prune
 # Includes source, tests, configuration templates and checksums; excludes secrets and installed dependencies.
 # Install dependencies from the configured internal npm repository.
-
-/README.md
-# Workspace Mgr
-
-Middleware between the **Orion** dashboard and **Red Hat OpenShift Dev Spaces**. On demand of a user it
-creates, lists, starts, stops and deletes DevWorkspaces, creates the user's project (namespace) when it does not
-exist, manages per-user Git credentials, and records every action to Postgres for the Dev Spaces dashboard.
-
-Node 20+, TypeScript (strict, ESM), Express 4, `@kubernetes/client-node`, `pg`, `zod`.
-Project rules: [docs/PROJECT_RULES.md](docs/PROJECT_RULES.md) · Checklist: [docs/CHECKLIST.md](docs/CHECKLIST.md)
-
-## Quick start
-
-```bash
-npm install
-cp .env.example .env        # edit; SECRET_KEY, ADMIN_*, DEVREG_URL are required
-npm run dev                 # tsx watch (loads env from your shell; use `node --env-file=.env` if you prefer)
-npm run build && npm start  # production
-```
-
-| Script                                                | What it does                               |
-| ----------------------------------------------------- | ------------------------------------------ |
-| `npm run typecheck` / `lint` / `format`               | tsc, eslint (0 warnings allowed), prettier |
-| `npm test`                                            | unit + integration + e2e                   |
-| `npm run test:unit` / `test:integration` / `test:e2e` | one layer                                  |
-| `npm run test:coverage`                               | all layers with a coverage gate            |
-
-## Postgres: the existing database
-
-Metrics go into the **existing** Orion database. workspace-mgr creates nothing (no tables, schemas or migrations);
-it only inserts rows into the table named by `POSTGRES_DATABASE_TABLENAME`.
-
-Same variables as the original service:
-
-```bash
-export POSTGRES_DATABASE=orion_dev_metadata
-export POSTGRES_HOSTNAME=NAORI01DPS_INSTANCE1.pgaas.dyn.nsroot.net
-export POSTGRES_PASSWORD=...
-export POSTGRES_PORT='1524'
-export POSTGRES_USER=app_orion_pgsql_dev
-export POSTGRES_DATABASE_TABLENAME='metrics."devspaces-metrics-dev"'
-export NODE_ENV=development
-```
-
-- **TLS** is always on and the server certificate is verified, as before. `NODE_ENV` picks the CA file:
-  `development` → `./certs/dev.pem` (hostname check relaxed), `uat` → `/app/backend/cert/uat.pem`,
-  `production` → `/app/backend/cert/prod.pem`. Override with `POSTGRES_CERT_DIR` or `POSTGRES_CA_FILE`.
-  The app refuses to start, naming the missing file, if the CA cannot be read.
-- **Columns:** the service reads the table's column list once and writes only the columns that exist (it knows
-  `timestamp, csiid, soeid, eventtype, resourcename, resourcetype, status, limitcpu, limitmemory, requestcpu,
-requestmemory, duration, storage, useraction, errordetail, workspaceversion, editorname`). A table without
-  `workspaceversion` / `editorname` still works; a warning names what is not stored.
-- **Timestamps** are written as UTC wall-clock text, as the original did.
-- A database problem never blocks a workspace action: it is logged and the action continues.
-
-## Environment variables
-
-Every variable the team exports is understood as-is (`.env.example` lists them with comments):
-
-| Variable                                         | Meaning                                                                                                                    |
-| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
-| `PORT`                                           | HTTP port (default 3050)                                                                                                   |
-| `NODE_ENV`                                       | `development` / `uat` / `production`; also picks the Postgres CA file                                                      |
-| `SECRET_KEY`, `ADMIN_USERNAME`, `ADMIN_PASSWORD` | login and JWT signing; **required**, there is no fallback secret                                                           |
-| `CLUSTER_API_URL`                                | Dev Spaces cluster API                                                                                                     |
-| `devSpacesClusterToken001d`                      | its bearer token, found by name: the `001d` must end the cluster name (`namctigtd001d`)                                    |
-| `DEPLOY_CLUSTER_API_URL`, `devOpsToken004d`      | optional separate cluster for build/deploy projects and its token; unset = same cluster (a token for another id is unused) |
-| `DEVREG_URL`                                     | devfile registry                                                                                                           |
-| `EDITOR_VSCODE`, `EDITOR_INTELLIJ`               | full editor ids, e.g. `che-incubator/che-code/latest`                                                                      |
-| `NODE_TLS_REJECT_UNAUTHORIZED=0`                 | do not verify certificates (clusters and every HTTPS peer); a warning is logged at startup                                 |
-| `POSTGRES_*`                                     | see "Postgres: the existing database"                                                                                      |
-
-Without a token the service uses `KUBECONFIG_PATH` (or the first command-line argument), then the default kubeconfig /
-pod service account. `CLUSTER_TOKEN` and `DEPLOY_CLUSTER_TOKEN` set a token explicitly. The Dev Spaces dashboard address
-for the editor link is `DEV_SPACES_SERVICE_FQDN`, or `https://devspaces.apps.<cluster domain>` worked out from `CLUSTER_API_URL`.
-At startup the service logs what it understood (which variable supplied each token, never the token itself).
-
-## Logs
-
-The terminal shows one readable entry per event: `time | LEVEL | event | details`, the whole line coloured.
-
-| Colour | Meaning                                                                                                 |
-| ------ | ------------------------------------------------------------------------------------------------------- |
-| green  | something succeeded: a call that returned 2xx/3xx, a workspace created/started/stopped/deleted, startup |
-| orange | warnings: a call the caller got wrong (4xx), TLS checking switched off, a table with missing columns    |
-| red    | errors: a call that failed on our side (5xx) and its cause, a failed e-mail, a database write failure   |
-| white  | everything else (information, debug)                                                                    |
-
-```text
-2026-10-24 00:55:44.025 | OK    | request                        | GET    /api/v1/healthz -> 200 (6 ms)  requestId=258d…
-2026-10-24 00:55:44.366 | WARN  | request                        | POST   /api/v1/login -> 401 (2 ms)  requestId=dc21…
-2026-10-24 00:55:44.479 | ERROR | request.failed
-    requestId : d348d911-a444-4803-bc94-3b3affad830b
-    code      : UPSTREAM_ERROR
-    error     : Devfile registry catalog: No response received from server
-```
-
-Entries with a lot of detail (startup summary, errors) use indented `key : value` lines followed by a blank line, so
-entries never run together. Secrets (tokens, passwords) are never printed. `LOG_FORMAT=json` gives one JSON object
-per line for a log collector (a success carries `"outcome":"success"`), `NO_COLOR=1` or `LOG_COLOR=false` removes the
-colours, `LOG_LEVEL=debug|info|warn|error|silent` filters.
-
-## API (version 1)
-
-All routes live under **`/api/v1`**. Send `Authorization: Bearer <jwt>` except for `login`.
-Errors are always `{ "error": string, "message": string, "code": string }`.
-
-| Method | Path                                    | Purpose                                                        |
-| ------ | --------------------------------------- | -------------------------------------------------------------- |
-| POST   | `/api/v1/login`                         | `{username,password}` → `{token}`                              |
-| GET    | `/api/v1/catalog`                       | Stacks from the devfile registry                               |
-| GET    | `/api/v1/:soeid/projects`               | The user's projects (namespaces)                               |
-| GET    | `/api/v1/:soeid/workspaces`             | List workspaces                                                |
-| POST   | `/api/v1/:soeid/workspaces`             | Create a workspace (creates the project if needed)             |
-| GET    | `/api/v1/:soeid/workspaces/:id`         | Workspace details                                              |
-| DELETE | `/api/v1/:soeid/workspaces/:id`         | Delete                                                         |
-| POST   | `/api/v1/:soeid/workspaces/:id/start`   | Start                                                          |
-| POST   | `/api/v1/:soeid/workspaces/:id/stop`    | Stop                                                           |
-| GET    | `/api/v1/:soeid/pats`                   | List GitHub PAT secrets                                        |
-| GET    | `/api/v1/:soeid/pats/:tokenName?csiid=` | View (token is masked)                                         |
-| POST   | `/api/v1/:soeid/pats/:tokenName`        | `{csiid,token}` create (409 if it exists)                      |
-| PUT    | `/api/v1/:soeid/pats/:tokenName`        | `{csiid,token}` replace                                        |
-| DELETE | `/api/v1/:soeid/pats/:tokenName?csiid=` | Delete (idempotent)                                            |
-| GET    | `/api/v1/:soeid/gitconfig?csiid=`       | View `~/.gitconfig`                                            |
-| PUT    | `/api/v1/:soeid/gitconfig`              | `{csiid,content}` create or replace                            |
-| DELETE | `/api/v1/:soeid/gitconfig?csiid=`       | Delete (idempotent)                                            |
-| GET    | `/api/v1/:soeid/deployment-projects`    | List build/deploy projects                                     |
-| POST   | `/api/v1/:soeid/deployment-projects`    | `{csiid}` → 201 created, or 200 if it already exists           |
-| DELETE | `/api/v1/:soeid/deployment-projects`    | Delete all of the user's deployment projects                   |
-| GET    | `/api/v1/healthz`, `/api/v1/readyz`                   | Liveness (no dependencies) / readiness (Kubernetes + Postgres) |
-
-Create-workspace body:
-
-```json
-{
-  "devworkspaceValue": "java-maven",
-  "csiid": "177398",
-  "editorType": "che-code",
-  "stackVersion": "2.0.0",
-  "repositoryUrl": "https://github.com/acme/app.git",
-  "repositoryCheckoutBranch": "main"
-}
-```
-
-`devworkspaceValue`, `csiid`, `editorType` and `stackVersion` are required. Editors are `che-code`, `che-idea`, or `che-goland`. `repositoryUrl` and `repositoryCheckoutBranch` are optional; omitted or blank values do not prevent workspace creation.
-
-**Versioning.** Every endpoint is served only under `/api/v1`, including health/readiness probes. Unversioned URLs return 404. See [API and code map](docs/API.md) for routers, controllers, administrative APIs, runtime configuration and log search.
-
-## Architecture
-
-```
-app → routers/index → feature routers → controllers  →  services (rules)  →  ports ← infra (Kubernetes, Postgres, registry, email)
-                                         ↓
-                                   factories (pure) , utils , constants
-```
-
-`src/container.ts` is the only place adapters are wired to services; tests wire in fakes
-(`tests/helpers/InMemoryKube.ts` behaves like a cluster, `pg-mem` like Postgres).
-
-## Tests
-
-| Layer       | Where               | What is real                                                                                       |
-| ----------- | ------------------- | -------------------------------------------------------------------------------------------------- |
-| Unit        | `tests/unit`        | One module; everything else faked                                                                  |
-| Integration | `tests/integration` | Express routes + services + SQL (`pg-mem`, with a test-only table fixture) + HTTP devfile registry |
-| End to end  | `tests/e2e`         | A listening server driven only over HTTP through whole user journeys                               |
-
-The cluster is always in memory: nothing here talks to a real OpenShift. Run a smoke test against your dev
-cluster before first release (see "Not verified").
-
-## Hand-over to another computer (`recreate-app.sh`, `all-app-code.txt`)
-
-The app moves between computers as **one text file**, `all-app-code.txt`, and one script, `recreate-app.sh`.
-Build the text file with `tools/build-all-code.sh`; on the destination computer, run:
-
-```bash
-bash recreate-app.sh -f             # inside the app folder: writes the files of ./all-app-code.txt, overwriting
-bash recreate-app.sh -f --prune     # also delete files that were removed from the app
-bash recreate-app.sh -n             # dry run: show what would happen
-bash recreate-app.sh p.txt ./out    # another input file / another folder (existing files are kept without -f)
-```
-
-- **First hand-over:** the entire application. **Every later one:** only the new and changed files, plus a list of
-  files that were removed (`/_REMOVED.txt`). It ends with what to run next (`npm install`, `npm run build`, ...) when
-  something relevant changed.
-- **New empty folder:** put `recreate-app.sh` and `all-app-code.txt` in it and run `bash recreate-app.sh -f`, then
-  `npm ci && npm test && npm run build && npm start`.
-- **Format:** `/path/to/file`, the file's content, a blank line, next file. Files that cannot be shown as exact plain
-  text (CRLF line endings, no final newline, odd names) are stored as base64 after `@@BINARY-SECTION`; the plain files
-  are LF, so an editor, e-mail or git changing line endings cannot damage anything.
-- **Safe:** the text file ends with a SHA-256 for every file; they are all checked in a temp folder before your files are
-  touched. Existing files that differ are kept unless you pass `-f`. Paths that could escape the folder are rejected.
-  `recreate-app.sh` never replaces itself while running; a newer version is saved as `recreate-app.sh.new`.
-- **Never in a hand-over:** `node_modules`, `dist`, `coverage`, `.git`, `tools`, `.env*` (secrets), private keys.
-- **For the maintainer:** `bash tools/build-all-code.sh` builds the next hand-over (entire app the first time, then
-  only changes; `--full`, `--list`, `--redo` and `--keep-state` exist). What the other computer has is remembered in
-  `.handover-state` (not committed). Before saving, the file is recreated in a temp folder and compared byte for byte.
-
-## Assumptions (my defaults; please confirm)
-
-You did not show the create-workspace payload, `index.ts`, `updateDevfile.ts` or the first three screenshots, so
-these were decided without them:
-
-- **Payload** is the shape above. `devworkspaceValue`+`csiid` come from the legacy code; the rest are additions.
-- **Editor profiles:** JetBrains server ports `2222` (IntelliJ) and `3400` (GoLand), home volume `10Gi`. Read from
-  a partly visible screenshot; verify in `src/factories/devfile-updater.ts`.
-- **Workspaces are inlined** in the DevWorkspace (`spec.template` + `contributions`) rather than creating a separate
-  DevWorkspaceTemplate as the oldest code did. Delete still cleans up legacy templates.
-- **Limits:** 3 running / 5 total workspaces per user (`MAX_RUNNING_WORKSPACES`, `MAX_TOTAL_WORKSPACES`).
-- **Missing config files** (`user-namespace.yaml`, `user-role-default.yaml`) are rebuilt in code
-  (`src/constants/kubernetes-configs.ts`, `NamespaceService`). The user role there is my guess.
-- **Auth:** only the admin login exists, as before; its token may act for any `:soeid` (what Orion needs today).
-  Tokens with `role: user` are limited to their own `:soeid`.
-- **Status codes** follow REST: login failure is `401` (was `400`), PAT create is `201`.
-- **Git username** is `<soeid><GITHUB_USER_SUFFIX>` (legacy used `<soeid>_citi`).
-
-## Not verified
-
-- No run against a real OpenShift cluster, real Postgres, or the real devfile registry/mail/GraphQL services.
-- `docker build` was not run. The Helm chart (`helm/`) has no Deployment template and its folder is named
-  `template`, not `templates`; it was left unchanged.
 
 /docs/API.md
 # Workspace Manager API and code map
@@ -342,6 +121,31 @@ Failed API requests have a `request.failed` log containing the error's source an
 message. Their `request` summary uses that same source, rather than the response
 listener in `app.ts`. Successful request summaries identify the access-log function.
 
+## Editor definition access
+
+The DevWorkspace operator fetches the IDE contribution independently of the API
+server. It needs a reachable editor devfile URL, not a browser-authenticated
+dashboard API URL. New workspaces use:
+
+```text
+<DEV_SPACES_SERVICE_FQDN>/plugin-registry/v3/plugins/<editor-id>/devfile.yaml
+```
+
+Set `EDITOR_REGISTRY_URL` to your actual internal plugin registry base, including
+`/v3`, when it differs from this default. The startup summary prints the selected
+registry. This is separate from `DEVREG_URL`, which supplies workspace stacks.
+The selected registry must be reachable from the DevWorkspace operator's cluster;
+Workspace Manager's token is not attached to the stored URL.
+
+An HTTP 403 while resolving `ide` means the editor request was denied. Updating
+the app fixes URLs for newly created workspaces; existing failed DevWorkspace
+resources retain their stored contribution until updated or recreated. The API's
+creation response confirms the resource exists, not that the operator has fetched
+the editor or started the workspace successfully.
+
+The registry URI form follows the DevWorkspace example in the
+[Red Hat Dev Spaces user guide](https://docs.redhat.com/en/documentation/red_hat_openshift_dev_spaces/3.8/pdf/user_guide/Red_Hat_OpenShift_Dev_Spaces-3.8-User_guide-en-US.pdf).
+
 ## Repairing or updating Kubernetes resources
 
 Restore existing defaults on a user's workspace project:
@@ -425,9 +229,13 @@ are supported. Stored secret values are never returned by this API.
 Production writes one redacted JSON entry per line to `logs/app-YYYY-MM-DD.log`.
 Each entry includes `timestamp` (`YYYY-MM-DD HH:MM:SS` in the process's local timezone),
 `file`, and `function`. The ISO `time` field remains available for precise filtering.
-Readable console and log-search output uses
-`[timestamp] [filename:line] [functionName]`. Continuation lines carry the
-same prefix. Source details come from the log call, or the original error stack when
+Successful and informational console/log-search output uses
+`[timestamp] [Workspace] Created workspace resource ...` and similar category-based
+sentences. Source locations are omitted from routine messages. Warnings and errors
+use `[timestamp] [filename:line] [functionName]` with the error message, status and
+correlation details. Continuation lines carry the same prefix. Structured JSON files
+retain event names, fields and source metadata for every severity. Source details
+come from the log call, or the original error stack when
 an Error object is provided. Application callbacks have descriptive function names;
 top-level execution without a named function is identified as `module`.
 Client failures (400/401/403/404/409) are logged as warnings with status, error code,
@@ -491,50 +299,490 @@ Tests retain the existing service and user journeys, replace deprecated-path che
 with 404 assertions, and cover provisioning, support updates on both clusters,
 administrator restrictions, runtime settings, and daily log retrieval.
 
-/src/app.ts
-import express, { type Express } from 'express';
-import { randomUUID } from 'node:crypto';
-import type { Container } from './container.js';
-import baseRouter from './routers/index.js';
-import { createErrorHandler, notFoundHandler } from './http/errors.js';
+/src/config/env.ts
+import { z } from 'zod';
 
-export const API_PREFIX = '/api/v1';
+const flag = (def: 'true' | 'false' = 'false') =>
+  z
+    .enum(['true', 'false'])
+    .default(def)
+    .transform((v) => v === 'true');
 
-export function createApp(c: Container): Express {
-  const app = express();
-  app.disable('x-powered-by');
+const intFrom = (def: number) => z.coerce.number().int().positive().default(def);
 
-  app.use(function requestContext(req, res, next) {
-    const incoming = req.header('x-request-id');
-    const requestId = incoming && /^[A-Za-z0-9-]{8,64}$/.test(incoming) ? incoming : randomUUID();
-    res.locals.requestId = requestId;
-    res.setHeader('x-request-id', requestId);
-    const started = Date.now();
-    res.on('finish', function logRequest() {
-      const failure = res.locals.failure as { error: Error; code: string } | undefined;
-      // Match request severity to the HTTP status.
-      const outcome = res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'success';
-      c.logger[outcome]('request', {
-        method: req.method,
-        // Preserve the full path when logging requests handled by nested routers.
-        path: req.originalUrl.split('?')[0],
-        status: res.statusCode,
-        ms: Date.now() - started,
-        requestId,
-        soeid: res.locals.soeid as string | undefined,
-        ...(failure ?? {}),
-      });
+const schema = z.object({
+  PORT: intFrom(3050),
+  NODE_ENV: z.string().default('development'),
+  LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error', 'silent']).default('info'),
+  // pretty = readable lines for a terminal; json = one JSON object per line for log collectors
+  LOG_FORMAT: z.enum(['pretty', 'json']).default('pretty'),
+  // colours in the pretty format (errors red, warnings orange, successes green, the rest white); NO_COLOR turns them off
+  LOG_COLOR: flag('true'),
+
+  SECRET_KEY: z.string().min(16, 'SECRET_KEY must be at least 16 characters'),
+  ADMIN_USERNAME: z.string().min(1, 'ADMIN_USERNAME is required'),
+  ADMIN_PASSWORD: z.string().min(1, 'ADMIN_PASSWORD is required'),
+  JWT_EXPIRES_IN: z.string().default('60d'),
+
+  CLUSTER_API_URL: z.string().default(''),
+  // Optional second cluster for the build/deploy projects; when unset the same cluster is used.
+  DEPLOY_CLUSTER_API_URL: z.string().optional(),
+  // Explicit bearer tokens. When unset they are found by name: devSpacesClusterToken<id> / devOpsToken<id>.
+  CLUSTER_TOKEN: z.string().optional(),
+  DEPLOY_CLUSTER_TOKEN: z.string().optional(),
+  KUBECONFIG_PATH: z.string().optional(),
+  DEPLOY_PROJECT_REQUESTER: z.string().default('devspaces-support-team'),
+  // When unset: https://devspaces.apps.<rest of the CLUSTER_API_URL host>
+  DEV_SPACES_SERVICE_FQDN: z.string().optional(),
+
+  DEVREG_URL: z.string().min(1, 'DEVREG_URL is required'),
+  EDITOR_REGISTRY_URL: z.url({ protocol: /^https?$/ }).optional(),
+  // Editor ids as the Dev Spaces dashboard knows them, e.g. che-incubator/che-code/latest (a bare name such as
+  // `che-code` is accepted and expanded).
+  EDITOR_VSCODE: z.string().default('che-incubator/che-code/latest'),
+  EDITOR_INTELLIJ: z.string().default('che-incubator/che-idea/latest'),
+  EDITOR_GOLAND: z.string().default('che-incubator/che-goland/latest'),
+  WORKSPACE_PROXY_URL: z.string().optional(),
+
+  MAX_RUNNING_WORKSPACES: intFrom(3),
+  MAX_TOTAL_WORKSPACES: intFrom(5),
+
+  POSTGRES_ENABLED: flag('true'),
+  POSTGRES_HOSTNAME: z.string().default('localhost'),
+  POSTGRES_PORT: intFrom(5432),
+  POSTGRES_DATABASE: z.string().default(''),
+  POSTGRES_USER: z.string().default(''),
+  POSTGRES_PASSWORD: z.string().default(''),
+  // The existing database requires TLS with a CA file chosen by NODE_ENV (see infra/db/pg-ssl.ts).
+  POSTGRES_SSL: flag('true'),
+  POSTGRES_CA_FILE: z.string().optional(),
+  POSTGRES_CERT_DIR: z.string().optional(),
+  POSTGRES_DATABASE_TABLENAME: z.string().default('metrics."devspaces-metrics"'),
+
+  NOTIFICATION_MAIL_URL: z.string().optional(),
+  NOTIFICATION_EMAIL_USERNAME: z.string().default(''),
+  NOTIFICATION_EMAIL_PASSWORD: z.string().default(''),
+  NOTIFICATION_SENDER: z.string().default('noreply@example.com'),
+  NOTIFICATION_CC: z.string().optional(),
+  EMAIL_DOMAIN: z.string().default('example.com'),
+  USER_DIRECTORY_GRAPHQL_URL: z.string().optional(),
+
+  GITHUB_URL: z.string().default('https://github.com'),
+  GITHUB_USER_SUFFIX: z.string().default(''),
+});
+
+/** `'1524'` → `1524`, `"a b"` → `a b`; anything not wrapped in one matching pair of quotes is untouched. */
+export function unquote(value: string): string {
+  const match = /^(['"])(.*)\1$/s.exec(value);
+  return match?.[2] ?? value;
+}
+
+/** `che-code` → `che-incubator/che-code/latest`; `che-incubator/che-code/latest` is kept as it is. */
+export function normalizeEditorId(value: string): string {
+  const v = value.trim();
+  return v.includes('/') ? v : `che-incubator/${v}/latest`;
+}
+
+/** `https://api.namctigtd001d.ecs.dyn.example.net:6443` → `namctigtd001d`. */
+export function clusterNameOf(apiUrl: string): string | undefined {
+  try {
+    const host = new URL(apiUrl).hostname;
+    return host.startsWith('api.') ? host.split('.')[1] : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** `https://api.<rest>:6443` → `https://devspaces.apps.<rest>` (the usual Dev Spaces dashboard host). */
+export function deriveDevSpacesFqdn(apiUrl: string): string {
+  try {
+    const host = new URL(apiUrl).hostname;
+    return host.startsWith('api.') ? `https://devspaces.apps.${host.slice('api.'.length)}` : '';
+  } catch {
+    return '';
+  }
+}
+
+export interface FoundToken {
+  /** The environment variable the token came from (never the token itself). */
+  name: string;
+  value: string;
+}
+
+/**
+ * Finds the bearer token for a cluster by variable name: `<prefix><id>`, e.g. devSpacesClusterToken001d for the cluster
+ * `namctigtd001d` (the id must be the end of the cluster name). A variable without an id (`<prefix>`) fits any cluster.
+ * Tokens that belong to another cluster are ignored, so a leftover `devOpsToken004d` is never sent to cluster 001d.
+ */
+export function findClusterToken(
+  env: Record<string, string | undefined>,
+  prefix: string,
+  apiUrl: string,
+): FoundToken | undefined {
+  const cluster = (clusterNameOf(apiUrl) ?? '').toLowerCase();
+  const fits = Object.keys(env)
+    .filter((k) => k.toLowerCase().startsWith(prefix.toLowerCase()) && env[k])
+    .filter((k) => {
+      const id = k.slice(prefix.length).toLowerCase();
+      return id === '' || (cluster !== '' && cluster.endsWith(id));
     });
-    next();
-  });
-  app.use(express.json({ limit: '256kb' }));
+  if (fits.length > 1) {
+    throw new Error(
+      `Invalid configuration:\n  - several variables fit one cluster token: ${fits.join(', ')}`,
+    );
+  }
+  const name = fits[0];
+  return name ? { name, value: env[name] as string } : undefined;
+}
 
-  const api = baseRouter(c);
-  app.use(API_PREFIX, api);
+export interface AppConfig {
+  port: number;
+  nodeEnv: string;
+  logLevel: 'debug' | 'info' | 'warn' | 'error' | 'silent';
+  logFormat: 'pretty' | 'json';
+  /** ANSI colours in the pretty log format. */
+  logColor: boolean;
+  auth: { secretKey: string; adminUsername: string; adminPassword: string; expiresIn: string };
+  cluster: {
+    /** The Dev Spaces cluster. */
+    apiUrl: string;
+    /** Bearer token for it; when unset the kubeconfig / in-cluster service account is used. */
+    token?: string;
+    /** Name of the variable the token came from, for the startup log (never the token). */
+    tokenVar?: string;
+    /** Cluster for build/deploy projects: DEPLOY_CLUSTER_API_URL, or the same cluster as apiUrl. */
+    deployApiUrl: string;
+    /** Only set when the deploy cluster is a different one. */
+    deployToken?: string;
+    deployTokenVar?: string;
+    /** False when NODE_TLS_REJECT_UNAUTHORIZED=0: certificates of the clusters are then not verified. */
+    tlsRejectUnauthorized: boolean;
+    kubeconfigPath?: string;
+    deployProjectRequester: string;
+    devSpacesServiceFqdn: string;
+  };
+  devreg: {
+    url: string;
+    editorRegistryUrl?: string;
+    editors: { vscode: string; intellij: string; goland: string };
+    workspaceProxyUrl?: string;
+  };
+  limits: { maxRunning: number; maxTotal: number };
+  postgres: {
+    enabled: boolean;
+    host: string;
+    port: number;
+    database: string;
+    user: string;
+    password: string;
+    ssl: boolean;
+    /** Explicit CA bundle; when unset the file is chosen from NODE_ENV (dev.pem / uat.pem / prod.pem). */
+    caFile?: string;
+    certDir?: string;
+    /** NODE_ENV, which selects the CA file and whether the hostname check is relaxed (development only). */
+    env: string;
+    /** Existing metrics table, e.g. metrics."devspaces-metrics-dev". The service only ever inserts into it. */
+    table: string;
+  };
+  notification: {
+    url?: string;
+    username: string;
+    password: string;
+    sender: string;
+    cc?: string;
+    emailDomain: string;
+    userDirectoryUrl?: string;
+  };
+  github: { url: string; userSuffix: string };
+}
 
-  app.use(notFoundHandler);
-  app.use(createErrorHandler(c.logger));
-  return app;
+/** What the service understood from its environment, for the startup log. Contains no secret values. */
+export function startupSummary(c: AppConfig): Record<string, unknown> {
+  const auth = (tokenVar: string | undefined, kubeconfig: string | undefined): string =>
+    tokenVar
+      ? `bearer token from ${tokenVar}`
+      : kubeconfig
+        ? 'kubeconfig file'
+        : 'default kubeconfig / pod service account';
+  return {
+    port: c.port,
+    nodeEnv: c.nodeEnv,
+    cluster: c.cluster.apiUrl,
+    clusterAuth: auth(c.cluster.tokenVar, c.cluster.kubeconfigPath),
+    deployCluster: c.cluster.deployApiUrl,
+    deployClusterAuth:
+      c.cluster.deployApiUrl === c.cluster.apiUrl
+        ? 'same cluster'
+        : auth(c.cluster.deployTokenVar, c.cluster.kubeconfigPath),
+    devSpacesFqdn: c.cluster.devSpacesServiceFqdn,
+    devfileRegistry: c.devreg.url,
+    editorRegistry:
+      c.devreg.editorRegistryUrl ?? `${c.cluster.devSpacesServiceFqdn.replace(/\/$/, '')}/plugin-registry/v3`,
+    editors: c.devreg.editors,
+    clusterTls: c.cluster.tlsRejectUnauthorized
+      ? 'certificates verified'
+      : 'NOT verified (NODE_TLS_REJECT_UNAUTHORIZED=0)',
+    postgres: c.postgres.enabled
+      ? {
+          host: c.postgres.host,
+          port: c.postgres.port,
+          database: c.postgres.database,
+          table: c.postgres.table,
+        }
+      : 'disabled',
+  };
+}
+
+/** Parse and validate the environment once, at startup. Throws a readable error listing every problem. */
+export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
+  // An exported-but-empty variable (`FOO=`) is treated as unset. Values that still carry their shell quotes
+  // (`'1524'`, `'metrics."devspaces-metrics-dev"'` from a .env file or a pasted export line) are unwrapped.
+  const cleaned = Object.fromEntries(
+    Object.entries(env)
+      .filter(([, v]) => v !== undefined && v !== '')
+      .map(([k, v]) => [k, unquote(v as string)]),
+  );
+  const parsed = schema.safeParse(cleaned);
+  if (!parsed.success) {
+    const problems = parsed.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`);
+    throw new Error(`Invalid configuration:\n  - ${problems.join('\n  - ')}`);
+  }
+  const e = parsed.data;
+  if (e.POSTGRES_ENABLED && (!e.POSTGRES_DATABASE || !e.POSTGRES_USER)) {
+    throw new Error(
+      'Invalid configuration:\n  - POSTGRES_DATABASE and POSTGRES_USER are required when POSTGRES_ENABLED=true',
+    );
+  }
+
+  const deployApiUrl = e.DEPLOY_CLUSTER_API_URL ?? e.CLUSTER_API_URL;
+  const separateDeployCluster = deployApiUrl !== e.CLUSTER_API_URL;
+  const main = e.CLUSTER_TOKEN
+    ? { name: 'CLUSTER_TOKEN', value: e.CLUSTER_TOKEN }
+    : findClusterToken(cleaned, 'devSpacesClusterToken', e.CLUSTER_API_URL);
+  const deploy = !separateDeployCluster
+    ? undefined
+    : e.DEPLOY_CLUSTER_TOKEN
+      ? { name: 'DEPLOY_CLUSTER_TOKEN', value: e.DEPLOY_CLUSTER_TOKEN }
+      : findClusterToken(cleaned, 'devOpsToken', deployApiUrl);
+  if (separateDeployCluster && !deploy && !e.KUBECONFIG_PATH) {
+    throw new Error(
+      `Invalid configuration:\n  - DEPLOY_CLUSTER_API_URL is set to a different cluster but no token was found for it ` +
+        `(set DEPLOY_CLUSTER_TOKEN, or devOpsToken<id> where <id> ends the cluster name)`,
+    );
+  }
+
+  return {
+    port: e.PORT,
+    nodeEnv: e.NODE_ENV,
+    logLevel: e.LOG_LEVEL,
+    logFormat: e.LOG_FORMAT,
+    logColor: e.LOG_COLOR && !cleaned.NO_COLOR,
+    auth: {
+      secretKey: e.SECRET_KEY,
+      adminUsername: e.ADMIN_USERNAME,
+      adminPassword: e.ADMIN_PASSWORD,
+      expiresIn: e.JWT_EXPIRES_IN,
+    },
+    cluster: {
+      apiUrl: e.CLUSTER_API_URL,
+      token: main?.value,
+      tokenVar: main?.name,
+      deployApiUrl,
+      deployToken: deploy?.value,
+      deployTokenVar: deploy?.name,
+      tlsRejectUnauthorized: cleaned.NODE_TLS_REJECT_UNAUTHORIZED !== '0',
+      kubeconfigPath: e.KUBECONFIG_PATH,
+      deployProjectRequester: e.DEPLOY_PROJECT_REQUESTER,
+      devSpacesServiceFqdn: e.DEV_SPACES_SERVICE_FQDN ?? deriveDevSpacesFqdn(e.CLUSTER_API_URL),
+    },
+    devreg: {
+      url: e.DEVREG_URL,
+      editorRegistryUrl: e.EDITOR_REGISTRY_URL,
+      editors: {
+        vscode: normalizeEditorId(e.EDITOR_VSCODE),
+        intellij: normalizeEditorId(e.EDITOR_INTELLIJ),
+        goland: normalizeEditorId(e.EDITOR_GOLAND),
+      },
+      workspaceProxyUrl: e.WORKSPACE_PROXY_URL,
+    },
+    limits: { maxRunning: e.MAX_RUNNING_WORKSPACES, maxTotal: e.MAX_TOTAL_WORKSPACES },
+    postgres: {
+      enabled: e.POSTGRES_ENABLED,
+      host: e.POSTGRES_HOSTNAME,
+      port: e.POSTGRES_PORT,
+      database: e.POSTGRES_DATABASE,
+      user: e.POSTGRES_USER,
+      password: e.POSTGRES_PASSWORD,
+      ssl: e.POSTGRES_SSL,
+      caFile: e.POSTGRES_CA_FILE,
+      certDir: e.POSTGRES_CERT_DIR,
+      env: e.NODE_ENV,
+      table: e.POSTGRES_DATABASE_TABLENAME,
+    },
+    notification: {
+      url: e.NOTIFICATION_MAIL_URL,
+      username: e.NOTIFICATION_EMAIL_USERNAME,
+      password: e.NOTIFICATION_EMAIL_PASSWORD,
+      sender: e.NOTIFICATION_SENDER,
+      cc: e.NOTIFICATION_CC,
+      emailDomain: e.EMAIL_DOMAIN,
+      userDirectoryUrl: e.USER_DIRECTORY_GRAPHQL_URL,
+    },
+    github: { url: e.GITHUB_URL.replace(/\/$/, ''), userSuffix: e.GITHUB_USER_SUFFIX },
+  };
+}
+
+/src/container.ts
+import type { AppConfig } from './config/env.js';
+import { MetricsRepository, NoopMetricsStore, createPgPool } from './infra/db/MetricsRepository.js';
+import { DevfileRegistryClient, createRegistryHttp } from './infra/devreg/DevfileRegistryClient.js';
+import { EmailNotifier, NoopNotifier } from './infra/email/EmailNotifier.js';
+import { GraphqlUserDirectory, NullUserDirectory } from './infra/email/GraphqlUserDirectory.js';
+import { KubeClient, createKubeConfig } from './infra/kube/KubeClient.js';
+import {
+  systemClock,
+  type Clock,
+  type DevfileRegistry,
+  type KubeGateway,
+  type MetricsStore,
+  type Notifier,
+} from './infra/ports.js';
+import { DeploymentNamespaceService } from './services/DeploymentNamespaceService.js';
+import { GitConfigService } from './services/GitConfigService.js';
+import { MetricsRecorder } from './services/MetricsRecorder.js';
+import { NamespaceService } from './services/NamespaceService.js';
+import { PatService } from './services/PatService.js';
+import { WorkspaceService } from './services/WorkspaceService.js';
+import { SupportService } from './services/SupportService.js';
+import type { Logger } from './utils/logger.js';
+
+export interface Dependencies {
+  kube: KubeGateway;
+  /** Cluster for build/deploy projects when it is a different one; defaults to `kube`. */
+  deployKube?: KubeGateway;
+  metrics: MetricsStore;
+  registry: DevfileRegistry;
+  notifier: Notifier;
+  clock?: Clock;
+}
+
+export interface Container {
+  reconfigure(config: AppConfig): void;
+  config: AppConfig;
+  logger: Logger;
+  kube: KubeGateway;
+  /** Same object as `kube` unless a separate deploy cluster is configured. */
+  deployKube: KubeGateway;
+  metrics: MetricsStore;
+  registry: DevfileRegistry;
+  recorder: MetricsRecorder;
+  namespaces: NamespaceService;
+  workspaces: WorkspaceService;
+  pats: PatService;
+  gitConfig: GitConfigService;
+  deployments: DeploymentNamespaceService;
+  support: SupportService;
+}
+
+/** Wire services to production adapters or test doubles. */
+export function buildContainer(
+  config: AppConfig,
+  logger: Logger,
+  deps: Dependencies,
+  refresh?: (config: AppConfig) => Dependencies,
+): Container {
+  const clock = deps.clock ?? systemClock;
+  const recorder = new MetricsRecorder(deps.metrics, clock, logger);
+  const namespaces = new NamespaceService(
+    deps.kube,
+    recorder,
+    { workspaceProxyUrl: config.devreg.workspaceProxyUrl, emailDomain: config.notification.emailDomain },
+    logger,
+  );
+  const deployments = new DeploymentNamespaceService(
+    deps.deployKube ?? deps.kube,
+    recorder,
+    deps.notifier,
+    config.cluster.deployProjectRequester,
+    logger,
+  );
+  const container: Container = {
+    reconfigure(next) {
+      const nextDependencies = refresh ? refresh(next) : deps;
+      const reconfigure = container.reconfigure;
+      Object.assign(container, buildContainer(next, logger, nextDependencies, refresh), { reconfigure });
+    },
+    config,
+    logger,
+    kube: deps.kube,
+    deployKube: deps.deployKube ?? deps.kube,
+    metrics: deps.metrics,
+    registry: deps.registry,
+    recorder,
+    namespaces,
+    workspaces: new WorkspaceService(
+      deps.kube,
+      namespaces,
+      deps.registry,
+      recorder,
+      {
+        limits: config.limits,
+        editors: config.devreg.editors,
+        editorRegistryUrl: config.devreg.editorRegistryUrl,
+        devSpacesServiceFqdn: config.cluster.devSpacesServiceFqdn,
+      },
+      clock,
+      logger,
+    ),
+    pats: new PatService(deps.kube, namespaces, recorder, config.github),
+    gitConfig: new GitConfigService(deps.kube, namespaces, recorder),
+    deployments,
+    support: new SupportService({
+      kube: deps.kube,
+      deployKube: deps.deployKube ?? deps.kube,
+      namespaces,
+      deployments,
+      logger,
+    }),
+  };
+  return container;
+}
+
+/** Real adapters for a running pod. */
+export function createProductionDependencies(config: AppConfig, logger: Logger): Dependencies {
+  const directory = config.notification.userDirectoryUrl
+    ? new GraphqlUserDirectory(config.notification.userDirectoryUrl, logger)
+    : new NullUserDirectory();
+  const { cluster } = config;
+  const skipTlsVerify = !cluster.tlsRejectUnauthorized;
+  const separateDeploy = cluster.deployApiUrl !== cluster.apiUrl;
+  return {
+    kube: new KubeClient(
+      createKubeConfig({
+        apiUrl: cluster.apiUrl,
+        token: cluster.token,
+        kubeconfigPath: cluster.kubeconfigPath,
+        skipTlsVerify,
+      }),
+    ),
+    deployKube: separateDeploy
+      ? new KubeClient(
+          createKubeConfig({
+            apiUrl: cluster.deployApiUrl,
+            token: cluster.deployToken,
+            kubeconfigPath: cluster.kubeconfigPath,
+            skipTlsVerify,
+          }),
+        )
+      : undefined,
+    metrics: config.postgres.enabled
+      ? new MetricsRepository(createPgPool(config.postgres, logger), config.postgres.table, logger)
+      : new NoopMetricsStore(),
+    registry: new DevfileRegistryClient(createRegistryHttp(config.devreg.url)),
+    notifier: config.notification.url
+      ? new EmailNotifier(config.notification, config.cluster.deployApiUrl, directory, logger)
+      : new NoopNotifier(),
+  };
 }
 
 /src/factories/workspace-factory.ts
@@ -557,6 +805,7 @@ export interface BuildWorkspaceArgs {
   editor: EditorKey;
   /** Full editor id as the Dev Spaces dashboard knows it, e.g. `che-incubator/che-code/latest`. */
   editorId: string;
+  editorRegistryUrl?: string;
   devSpacesServiceFqdn: string;
   repositoryUrl?: string;
   repositoryBranch?: string;
@@ -652,264 +901,11 @@ export function buildDevWorkspaceObject(a: BuildWorkspaceArgs): DevWorkspaceReso
       contributions: [
         {
           name: 'ide',
-          uri: `${a.devSpacesServiceFqdn}/dashboard/api/editors/devfile?che-editor=${a.editorId}`,
+          uri: `${(a.editorRegistryUrl ?? `${a.devSpacesServiceFqdn.replace(/\/$/, '')}/plugin-registry/v3`).replace(/\/$/, '')}/plugins/${a.editorId}/devfile.yaml`,
         },
       ],
     },
   };
-}
-
-/src/factories/workspace-setup.ts
-export interface WorkspaceSetup {
-  stack: string;
-  repositoryUrl?: string;
-  repositoryBranch?: string;
-}
-
-const shellQuote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
-
-/** Runs inside the workspace container after the Dev Spaces project clone. */
-export function workspaceSetupScript(): string {
-  return [
-    'set +e',
-    'set +u',
-    'REPO_DIR="${WORKSPACE_REPOSITORY_DIR:-/projects/default-project}"',
-    'MTA_DIR="${WORKSPACE_MTA_DIR:-/home/user/mta-analyzer-rpc-linux-amd64}"',
-    'SETTINGS_PATH="${WORKSPACE_SETTINGS_PATH:-/checode/remote/data/Machine/settings.json}"',
-    'LOG_FILE="${WORKSPACE_SETUP_LOG:-/tmp/workspace-setup-debug.log}"',
-    'exec >> "$LOG_FILE" 2>&1',
-    'log_setup() { printf "[%s] [workspace-setup] [%s] %s\\n" "$(date +"%Y-%m-%d %H:%M:%S")" "$1" "$2"; }',
-    'log_setup setup "Starting workspace post-start setup."',
-    'if [ "$WORKSPACE_STACK" = "citi-optimus" ]; then',
-    '  ANALYZER="$MTA_DIR/mta-analyzer-rpc"',
-    '  if [ -f "$ANALYZER" ]; then',
-    '    chmod +x "$ANALYZER" || log_setup configureAnalyzer "Could not set executable permission; continuing."',
-    '  else log_setup configureAnalyzer "MTA analyzer binary not found; continuing."; fi',
-    '  if [ -f "$SETTINGS_PATH" ] && command -v jq >/dev/null 2>&1; then',
-    '    UPDATED=$(jq --arg analyzer_path "$ANALYZER" \'. + {"mta-core.analyzerPath": $analyzer_path}\' "$SETTINGS_PATH")',
-    '    if [ "$?" -eq 0 ]; then',
-    '      printf "%s\\n" "$UPDATED" > "$SETTINGS_PATH" || log_setup configureAnalyzer "Could not write settings; continuing."',
-    '    else log_setup configureAnalyzer "Could not parse analyzer settings; continuing."; fi',
-    '  else log_setup configureAnalyzer "Settings file or jq unavailable; skipping settings update."; fi',
-    'fi',
-    'if [ "$REPOSITORY_URL_PROVIDED" != "true" ]; then',
-    '  log_setup checkoutRepository "No repositoryUrl supplied; skipping Git setup."',
-    '  exit 0',
-    'fi',
-    'if ! cd "$REPO_DIR" || ! git rev-parse --git-dir >/dev/null 2>&1; then',
-    '  log_setup checkoutRepository "Cloned repository directory unavailable; skipping Git setup."',
-    '  exit 0',
-    'fi',
-    'git fetch --all --prune || log_setup checkoutRepository "Git fetch failed; continuing with available local refs."',
-    'git branch -a || true',
-    'if [ -z "$TARGET_BRANCH" ]; then',
-    '  git checkout main || git checkout master || log_setup checkoutRepository "Default branches unavailable; retaining the current branch."',
-    'elif git checkout "$TARGET_BRANCH"; then',
-    '  log_setup checkoutRepository "Requested branch checked out."',
-    'elif git show-ref --verify --quiet "refs/remotes/origin/$TARGET_BRANCH"; then',
-    '  git checkout -b "$TARGET_BRANCH" --track "origin/$TARGET_BRANCH" || git checkout --detach "origin/$TARGET_BRANCH" || log_setup checkoutRepository "Could not check out the remote branch; retaining the current branch."',
-    'else',
-    '  git checkout -b "$TARGET_BRANCH" || log_setup checkoutRepository "Could not create the requested local branch; retaining the current branch."',
-    'fi',
-    'git branch -a || true',
-    'git status --short || true',
-    'log_setup setup "Workspace setup completed."',
-    'exit 0',
-  ].join('\n');
-}
-
-export function buildWorkspaceSetupCommand(input: WorkspaceSetup): string {
-  return `env WORKSPACE_STACK=${shellQuote(input.stack)} REPOSITORY_URL_PROVIDED=${shellQuote(input.repositoryUrl ? 'true' : 'false')} TARGET_BRANCH=${shellQuote(input.repositoryBranch ?? '')} bash -c ${shellQuote(workspaceSetupScript())}`;
-}
-
-/src/http/errors.ts
-import type { ErrorRequestHandler, NextFunction, Request, RequestHandler, Response } from 'express';
-import { AppError, NotFoundError, ValidationError, errorMessage } from '../utils/errors.js';
-import type { Logger } from '../utils/logger.js';
-
-export interface ErrorBody {
-  error: string;
-  message: string;
-  code: string;
-}
-
-export const errorBody = (message: string, code: string): ErrorBody => ({ error: message, message, code });
-
-/** Express 4 does not catch rejected promises; this forwards them to the error handler. */
-export const asyncHandler =
-  (fn: (req: Request, res: Response) => Promise<void>): RequestHandler =>
-  (req, res, next: NextFunction) => {
-    fn(req, res).catch(next);
-  };
-
-export const notFoundHandler: RequestHandler = function routeNotFound(req, _res, next) {
-  next(new NotFoundError(`Route not found: ${req.method} ${req.path}`, 'ROUTE_NOT_FOUND'));
-};
-
-export function createErrorHandler(logger: Logger): ErrorRequestHandler {
-  return function handleRequestError(err: unknown, req, res, next) {
-    if (res.headersSent) return next(err);
-    const requestId = res.locals.requestId as string | undefined;
-
-    if (err instanceof AppError) {
-      res.locals.failure = { error: err, code: err.code };
-      logger[err.status >= 500 ? 'error' : 'warn']('request.failed', {
-        requestId,
-        method: req.method,
-        path: req.originalUrl?.split('?')[0] ?? req.path,
-        status: err.status,
-        code: err.code,
-        error: err,
-        ...(err instanceof ValidationError ? { details: err.details } : {}),
-      });
-      res.status(err.status).json({
-        ...errorBody(err.message, err.code),
-        ...(err instanceof ValidationError ? { details: err.details } : {}),
-      });
-      return;
-    }
-    // body-parser errors carry a status and a type
-    const parserError = err as { status?: number; type?: string };
-    if (parserError.type === 'entity.parse.failed') {
-      res.locals.failure = { error: new Error('Request body is not valid JSON'), code: 'INVALID_JSON' };
-      logger.warn('request.failed', {
-        requestId,
-        method: req.method,
-        path: req.path,
-        status: 400,
-        code: 'INVALID_JSON',
-        error: 'Request body is not valid JSON',
-      });
-      res.status(400).json(errorBody('Request body is not valid JSON', 'INVALID_JSON'));
-      return;
-    }
-    if (parserError.type === 'entity.too.large') {
-      res.locals.failure = { error: new Error('Request body is too large'), code: 'PAYLOAD_TOO_LARGE' };
-      logger.warn('request.failed', {
-        requestId,
-        method: req.method,
-        path: req.path,
-        status: 413,
-        code: 'PAYLOAD_TOO_LARGE',
-        error: 'Request body is too large',
-      });
-      res.status(413).json(errorBody('Request body is too large', 'PAYLOAD_TOO_LARGE'));
-      return;
-    }
-    // Never leak internals for unexpected errors.
-    res.locals.failure = {
-      error: err instanceof Error ? err : new Error(errorMessage(err)),
-      code: 'INTERNAL_ERROR',
-    };
-    logger.error('request.crashed', {
-      requestId,
-      path: req.path,
-      error: err instanceof Error ? err : errorMessage(err),
-    });
-    res.status(500).json(errorBody('Internal server error', 'INTERNAL_ERROR'));
-  };
-}
-
-/src/http/schemas.ts
-import { z } from 'zod';
-import { ValidationError } from '../utils/errors.js';
-import type { EditorKey } from '../types.js';
-
-const identifier = /^[A-Za-z0-9._-]+$/;
-
-const csiid = z
-  .union([z.string(), z.number()], { error: 'csiid is required and must be numeric' })
-  .transform((v) => String(v))
-  .pipe(z.string().regex(/^\d{1,10}$/, 'csiid must be numeric'));
-
-export const loginSchema = z.strictObject({ username: z.string().min(1), password: z.string().min(1) });
-
-const editorKeys: Record<string, EditorKey> = {
-  'che-code': 'vscode',
-  'che-idea': 'intellij',
-  'che-goland': 'goland',
-  vscode: 'vscode',
-  intellij: 'intellij',
-  goland: 'goland',
-};
-const editorType = z.enum(['che-code', 'che-idea', 'che-goland', 'vscode', 'intellij', 'goland']);
-const optionalText = <T extends z.ZodType>(schema: T) =>
-  z.preprocess(
-    (value) => (value === null || (typeof value === 'string' && value.trim() === '') ? undefined : value),
-    schema.optional(),
-  );
-const branch = z
-  .string()
-  .max(200)
-  .regex(/^[A-Za-z0-9._/-]+$/, 'invalid branch name');
-
-export const createWorkspaceSchema = z
-  .strictObject({
-    devworkspaceValue: z
-      .string({ error: 'devworkspaceValue is required and must name a stack' })
-      .min(1)
-      .max(100)
-      .regex(identifier, 'invalid stack name'),
-    csiid,
-    editorType: editorType.optional(),
-    editor: z.enum(['vscode', 'intellij', 'goland']).optional(),
-    stackVersion: z
-      .string({ error: 'stackVersion is required and must be a string' })
-      .min(1, 'stackVersion is required')
-      .max(50)
-      .regex(identifier, 'invalid stack version'),
-    repositoryUrl: optionalText(z.url({ protocol: /^https$/ }).max(500)),
-    repositoryCheckoutBranch: optionalText(branch),
-    repositoryBranch: optionalText(branch),
-  })
-  .superRefine((body, context) => {
-    if (!body.editorType && !body.editor)
-      context.addIssue({
-        code: 'custom',
-        path: ['editorType'],
-        message: 'editorType is required (che-code, che-idea, or che-goland)',
-      });
-    if (body.editorType && body.editor && editorKeys[body.editorType] !== body.editor)
-      context.addIssue({
-        code: 'custom',
-        path: ['editorType'],
-        message: 'editorType and editor must identify the same editor',
-      });
-    if (
-      body.repositoryCheckoutBranch &&
-      body.repositoryBranch &&
-      body.repositoryCheckoutBranch !== body.repositoryBranch
-    )
-      context.addIssue({
-        code: 'custom',
-        path: ['repositoryCheckoutBranch'],
-        message: 'Conflicting repository branch values',
-      });
-  })
-  .transform(({ editorType, editor, repositoryCheckoutBranch, repositoryBranch, ...body }) => ({
-    ...body,
-    editor: editorKeys[editorType ?? editor ?? ''] as EditorKey,
-    repositoryBranch: repositoryCheckoutBranch ?? repositoryBranch,
-  }));
-
-export const csiidQuerySchema = z.object({ csiid });
-export const csiidBodySchema = z.strictObject({ csiid });
-export const patBodySchema = z.strictObject({ csiid, token: z.string().min(1).max(200) });
-export const gitConfigBodySchema = z.strictObject({ csiid, content: z.string().min(1) });
-
-export function parse<T extends z.ZodType>(schema: T, data: unknown): z.output<T> {
-  const result = schema.safeParse(data ?? {});
-  if (!result.success) {
-    const message = result.error.issues.map((i) => `${i.path.join('.') || 'body'}: ${i.message}`).join('; ');
-    throw new ValidationError(
-      message,
-      result.error.issues.map((issue) => ({
-        field: issue.path.join('.') || 'body',
-        message: issue.message,
-      })),
-    );
-  }
-  return result.data;
 }
 
 /src/services/WorkspaceService.ts
@@ -933,6 +929,7 @@ import type { NamespaceService } from './NamespaceService.js';
 export interface WorkspaceServiceOptions {
   limits: AppConfig['limits'];
   editors: AppConfig['devreg']['editors'];
+  editorRegistryUrl?: string;
   devSpacesServiceFqdn: string;
 }
 
@@ -1043,6 +1040,7 @@ export class WorkspaceService {
     this.assertCanCreateAnother(await this.listResources(soeid));
 
     const { name: namespace } = await this.namespaces.ensure(soeid, csiid);
+    this.logger.info('workspace.creating', { soeid, namespace, stack: input.devworkspaceValue });
     const { yaml, version } = await this.registry.getDevfile(input.devworkspaceValue, input.stackVersion);
     const devfile = applyEditorProfile(parseDevfile(yaml), input.editor);
     const body = buildDevWorkspaceObject({
@@ -1054,6 +1052,7 @@ export class WorkspaceService {
       devfile,
       editor: input.editor,
       editorId: this.editorId(input.editor),
+      editorRegistryUrl: this.options.editorRegistryUrl,
       devSpacesServiceFqdn: this.options.devSpacesServiceFqdn,
       repositoryUrl: input.repositoryUrl,
       repositoryBranch: input.repositoryBranch,
@@ -1072,7 +1071,13 @@ export class WorkspaceService {
       },
       () => this.kube.create<DevWorkspaceResource>('DevWorkspace', namespace, body),
     );
-    this.logger.success('workspace.created', { soeid, namespace, workspace: created.metadata?.name });
+    this.logger.success('workspace.created', {
+      soeid,
+      namespace,
+      workspace: created.metadata?.name,
+      version,
+      editor: input.editor,
+    });
     return toWorkspace(created);
   }
 
@@ -1091,6 +1096,11 @@ export class WorkspaceService {
   private async setStarted(soeid: string, dw: DevWorkspaceResource, started: boolean): Promise<Workspace> {
     const namespace = dw.metadata?.namespace ?? '';
     const name = dw.metadata?.name ?? '';
+    this.logger.info(started ? 'workspace.starting' : 'workspace.stopping', {
+      soeid,
+      namespace,
+      workspace: name,
+    });
     const resources = summarizeComponents(dw.spec?.template?.components);
     const patched = await this.recorder.track(
       {
@@ -1111,6 +1121,12 @@ export class WorkspaceService {
       namespace,
       workspace: name,
     });
+    if (!started)
+      this.logger.info('workspace.duration', {
+        soeid,
+        workspace: name,
+        duration: durationSince(runningSince(dw), this.clock.now()),
+      });
     return toWorkspace({ ...dw, ...patched, metadata: { ...dw.metadata, ...patched.metadata } });
   }
 
@@ -1118,6 +1134,7 @@ export class WorkspaceService {
     const dw = await this.find(soeid, id);
     const namespace = dw.metadata?.namespace ?? '';
     const name = dw.metadata?.name ?? '';
+    this.logger.info('workspace.deleting', { soeid, namespace, workspace: name });
     const resources = summarizeComponents(dw.spec?.template?.components);
 
     await this.recorder.track(
@@ -1150,560 +1167,240 @@ export class WorkspaceService {
   }
 }
 
-/src/utils/errors.ts
-export class AppError extends Error {
-  constructor(
-    message: string,
-    public readonly status: number,
-    public readonly code: string,
-    options?: { cause?: unknown },
-  ) {
-    super(message, options);
-    this.name = new.target.name;
-  }
+/src/utils/log-format.ts
+/** Readable terminal logs with timestamps and source locations. */
+import { logCategory, logMessage } from './log-message.js';
+
+export type LogKind = 'debug' | 'info' | 'success' | 'warn' | 'error';
+
+const ESC = '\u001b[';
+export const RESET = `${ESC}0m`;
+export const COLORS: Record<LogKind, string> = {
+  error: `${ESC}31m`, // red
+  warn: `${ESC}38;5;208m`, // orange
+  success: `${ESC}32m`, // green
+  info: `${ESC}97m`, // white
+  debug: `${ESC}97m`, // white
+};
+
+const BADGE: Record<LogKind, string> = {
+  error: 'ERROR',
+  warn: 'WARN ',
+  success: 'OK   ',
+  info: 'INFO ',
+  debug: 'DEBUG',
+};
+
+const EVENT_WIDTH = 30;
+const BLOCK_INDENT = '    ';
+const MAX_INLINE_FIELDS = 6;
+const MAX_INLINE_VALUE = 80;
+const MAX_INLINE_TOTAL = 120;
+
+export interface LogEntry {
+  time: Date;
+  kind: LogKind;
+  event: string;
+  fields: Record<string, unknown>;
 }
 
-export class BadRequestError extends AppError {
-  constructor(message: string, code = 'BAD_REQUEST') {
-    super(message, 400, code);
-  }
-}
+const pad2 = (n: number): string => String(n).padStart(2, '0');
 
-export class ValidationError extends BadRequestError {
-  constructor(
-    message: string,
-    public readonly details: { field: string; message: string }[],
-  ) {
-    super(message, 'VALIDATION_ERROR');
-  }
-}
-
-export class UnauthorizedError extends AppError {
-  constructor(message = 'Authentication required') {
-    super(message, 401, 'UNAUTHORIZED');
-  }
-}
-
-export class ForbiddenError extends AppError {
-  constructor(message = 'Forbidden', options?: { cause?: unknown }) {
-    super(message, 403, 'FORBIDDEN', options);
-  }
-}
-
-export class NotFoundError extends AppError {
-  constructor(message: string, code = 'NOT_FOUND', options?: { cause?: unknown }) {
-    super(message, 404, code, options);
-  }
-}
-
-export class ConflictError extends AppError {
-  constructor(message: string, code = 'CONFLICT', options?: { cause?: unknown }) {
-    super(message, 409, code, options);
-  }
-}
-
-export class UpstreamError extends AppError {
-  constructor(message: string, options?: { cause?: unknown }) {
-    super(message, 502, 'UPSTREAM_ERROR', options);
-  }
-}
-
-export class TimeoutError extends AppError {
-  constructor(message: string) {
-    super(message, 504, 'TIMEOUT');
-  }
-}
-
-export class WorkspaceConfigNotFoundError extends NotFoundError {
-  constructor(message: string) {
-    super(message, 'WORKSPACE_CONFIG_NOT_FOUND');
-  }
-}
-
-export class WorkspaceCountExceededError extends ConflictError {
-  constructor(message: string) {
-    super(message, 'WORKSPACE_COUNT_EXCEEDED');
-  }
-}
-
-export class WorkspaceRunCountExceededError extends ConflictError {
-  constructor(message: string) {
-    super(message, 'WORKSPACE_RUN_COUNT_EXCEEDED');
-  }
-}
-
-export function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-/tests/e2e/journeys.test.ts
-import jwt from 'jsonwebtoken';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import {
-  caller,
-  startControllerSimulation,
-  startE2E,
-  waitFor,
-  type Caller,
-  type E2E,
-} from '../helpers/e2e.js';
-import { SAMPLE_PAT } from '../helpers/sample-devfile.js';
-import { TEST_SECRET } from '../helpers/testkit.js';
-
-let e2e: E2E;
-let call: Caller;
-let stopController: () => void;
-
-beforeAll(async () => {
-  e2e = await startE2E();
-  ({ call } = await e2e.login());
-});
-afterAll(() => e2e.stop());
-beforeEach(async () => {
-  e2e.fakes.kube.namespaces.clear();
-  e2e.fakes.kube.objects.clear();
-  e2e.fakes.metrics.records.length = 0;
-  e2e.fakes.notifier.created.length = 0;
-  e2e.fakes.notifier.existing.length = 0;
-  e2e.fakes.notifier.deleted.length = 0;
-  e2e.registry.failing = false;
-  await e2e.sql('DELETE FROM metrics."devspaces-metrics"');
-  stopController = startControllerSimulation(e2e.fakes.kube);
-});
-afterEach(() => stopController());
-
-const events = async () =>
-  (await e2e.sql('SELECT eventtype, resourcetype FROM metrics."devspaces-metrics" ORDER BY id')).map(
-    (r) => `${r.eventtype}:${r.resourcetype}`,
+/** Local time `2026-10-24 03:12:45`. */
+export function formatLocalTime(d: Date): string {
+  return (
+    `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ` +
+    `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`
   );
+}
 
-describe('journey: a developer’s day', () => {
-  it('logs in, picks a stack, works, stops, resumes and cleans up', async () => {
-    // Orion shows the stacks
-    const catalog = await call('GET', '/api/v1/catalog');
-    expect(catalog.status).toBe(200);
-    const stack = catalog.body[0].name as string;
-    expect(stack).toBe('java-maven');
+type Primitive = string | number | boolean | null | undefined;
+const isPrimitive = (v: unknown): v is Primitive => v === null || v === undefined || typeof v !== 'object';
+const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
 
-    // Create (the project does not exist yet, so it is created too)
-    const created = await call('POST', '/api/v1/pp58386/workspaces', {
-      editor: 'vscode',
-      stackVersion: '2.0.0',
-      devworkspaceValue: stack,
-      csiid: '177398',
-    });
-    expect(created.status).toBe(200);
-    const id = created.body.id as string;
-    expect(created.body.namespace).toBe('pp58386-devspaces-177398');
+const oneLine = (s: string): string => s.replace(/\r?\n/g, '\\n');
 
-    // The controller brings it up
-    const running = await waitFor('workspace Running', async () => {
-      const ws = await call('GET', `/api/v1/pp58386/workspaces/${id}`);
-      return ws.body.phase === 'Running' ? ws.body : undefined;
-    });
-    expect(running.mainUrl).toBe(`https://${id}.apps.test/`);
+/** Inline value: bare when simple, quoted when it contains spaces or `=`. */
+function inlineValue(v: Primitive): string {
+  if (typeof v !== 'string') return String(v);
+  const s = oneLine(v);
+  return /^[^\s"=]+$/.test(s) ? s : JSON.stringify(s);
+}
 
-    // It appears in the list and in the project list
-    expect((await call('GET', '/api/v1/pp58386/workspaces')).body).toHaveLength(1);
-    expect((await call('GET', '/api/v1/pp58386/projects')).body[0]).toMatchObject({ csiid: '177398' });
+/** Value on its own line: strings as they are, arrays as compact JSON. */
+function blockValue(v: unknown): string {
+  if (typeof v === 'string') return oneLine(v);
+  if (Array.isArray(v)) return JSON.stringify(v);
+  return String(v);
+}
 
-    // Stop after an hour of work
-    e2e.fakes.clock.advance(60 * 60 * 1000);
-    expect((await call('POST', `/api/v1/pp58386/workspaces/${id}/stop`)).status).toBe(200);
-    await waitFor(
-      'workspace Stopped',
-      async () => (await call('GET', `/api/v1/pp58386/workspaces/${id}`)).body.phase === 'Stopped',
-    );
-
-    // Resume
-    expect((await call('POST', `/api/v1/pp58386/workspaces/${id}/start`)).status).toBe(200);
-    await waitFor(
-      'workspace Running again',
-      async () => (await call('GET', `/api/v1/pp58386/workspaces/${id}`)).body.phase === 'Running',
-    );
-
-    // Delete
-    expect((await call('DELETE', `/api/v1/pp58386/workspaces/${id}`)).status).toBe(200);
-    expect((await call('GET', '/api/v1/pp58386/workspaces')).body).toEqual([]);
-    expect(e2e.fakes.kube.workspaces()).toHaveLength(0);
-
-    // Everything was recorded for the dashboard, in order
-    expect(await events()).toEqual([
-      'create:project',
-      'create:workspace',
-      'stop:workspace',
-      'start:workspace',
-      'delete:workspace',
-    ]);
-    const stop = (
-      await e2e.sql(`SELECT duration FROM metrics."devspaces-metrics" WHERE eventtype = 'stop'`)
-    )[0];
-    expect(stop?.duration).toBe('1 hour');
-  });
-
-  it('keeps a developer’s tooling in sync: git config, PAT, deployment project', async () => {
-    await call('POST', '/api/v1/pp1/workspaces', {
-      editor: 'vscode',
-      stackVersion: '1.0.0',
-      devworkspaceValue: 'python',
-      csiid: '5',
-    });
-
-    expect(
-      (await call('PUT', '/api/v1/pp1/gitconfig', { csiid: '5', content: '[user]\n  name = Pat\n' })).status,
-    ).toBe(200);
-    expect((await call('POST', '/api/v1/pp1/pats/main', { csiid: '5', token: SAMPLE_PAT })).status).toBe(201);
-    const pats = await call('GET', '/api/v1/pp1/pats');
-    expect(pats.body).toEqual([expect.objectContaining({ name: 'main', namespace: 'pp1-devspaces-5' })]);
-
-    const deploy = await call('POST', '/api/v1/pp1/deployment-projects', { csiid: '5' });
-    expect(deploy.status).toBe(201);
-    expect(e2e.fakes.notifier.created).toHaveLength(1);
-    expect((await call('GET', '/api/v1/pp1/deployment-projects')).body).toEqual(['pp1-devspaces-deploy-5']);
-
-    expect((await call('DELETE', '/api/v1/pp1/deployment-projects')).body.deleted).toEqual([
-      'pp1-devspaces-deploy-5',
-    ]);
-    expect(e2e.fakes.notifier.deleted).toHaveLength(1);
-
-    expect(await events()).toEqual([
-      'create:project',
-      'create:workspace',
-      'create:gitconfig',
-      'create:pat',
-      'create:deployment_namespace',
-      'delete:deployment_namespace',
-    ]);
-    // and no secret ever reached the metrics table
-    expect(JSON.stringify(await e2e.sql('SELECT * FROM metrics."devspaces-metrics"'))).not.toContain(
-      SAMPLE_PAT,
-    );
-  });
-});
-
-describe('journey: several users share the platform', () => {
-  it('isolates users from each other', async () => {
-    const a = await call('POST', '/api/v1/alice1/workspaces', {
-      editor: 'vscode',
-      stackVersion: '2.0.0',
-      devworkspaceValue: 'java-maven',
-      csiid: '1',
-    });
-    const b = await call('POST', '/api/v1/bob22/workspaces', {
-      editor: 'vscode',
-      stackVersion: '1.0.0',
-      devworkspaceValue: 'python',
-      csiid: '2',
-    });
-    expect((await call('GET', '/api/v1/alice1/workspaces')).body.map((w: { id: string }) => w.id)).toEqual([
-      a.body.id,
-    ]);
-    expect((await call('GET', '/api/v1/bob22/workspaces')).body.map((w: { id: string }) => w.id)).toEqual([
-      b.body.id,
-    ]);
-    expect((await call('DELETE', `/api/v1/bob22/workspaces/${a.body.id}`)).status).toBe(404);
-    expect(e2e.fakes.kube.workspaces()).toHaveLength(2);
-  });
-
-  it('a user token reaches only its own resources', async () => {
-    const userToken = jwt.sign({ role: 'user' }, TEST_SECRET, { subject: 'alice1' });
-    const asAlice = caller(e2e.baseUrl, userToken);
-    expect((await asAlice('GET', '/api/v1/alice1/workspaces')).status).toBe(200);
-    expect((await asAlice('GET', '/api/v1/bob22/workspaces')).status).toBe(403);
-    expect(
-      (
-        await asAlice('POST', '/api/v1/bob22/workspaces', {
-          editor: 'vscode',
-          stackVersion: '1.0.0',
-          devworkspaceValue: 'python',
-          csiid: '2',
-        })
-      ).status,
-    ).toBe(403);
-    expect(e2e.fakes.kube.namespaces.size).toBe(0);
-  });
-
-  it('enforces the per-user limits while other users are unaffected', async () => {
-    const make = (user: string, csiid: string) =>
-      call('POST', `/api/v1/${user}/workspaces`, {
-        editor: 'vscode',
-        stackVersion: '1.0.0',
-        devworkspaceValue: 'python',
-        csiid,
-      });
-    stopController(); // keep workspaces "active" so the running limit bites
-    expect((await make('alice1', '1')).status).toBe(200);
-    expect((await make('alice1', '1')).status).toBe(200);
-    const blocked = await make('alice1', '1');
-    expect(blocked.status).toBe(409);
-    expect(blocked.body.code).toBe('WORKSPACE_RUN_COUNT_EXCEEDED');
-    expect((await make('bob22', '2')).status).toBe(200);
-  });
-
-  it('survives two simultaneous first requests for a brand-new project', async () => {
-    stopController();
-    const [x, y] = await Promise.all([
-      call('POST', '/api/v1/carol3/workspaces', {
-        editor: 'vscode',
-        stackVersion: '1.0.0',
-        devworkspaceValue: 'python',
-        csiid: '3',
-      }),
-      call('POST', '/api/v1/carol3/workspaces', {
-        editor: 'vscode',
-        stackVersion: '1.0.0',
-        devworkspaceValue: 'python',
-        csiid: '3',
-      }),
-    ]);
-    expect([x.status, y.status]).toEqual([200, 200]);
-    expect(e2e.fakes.kube.workspaces('carol3-devspaces-3')).toHaveLength(2);
-    expect([...e2e.fakes.kube.namespaces.keys()]).toEqual(['carol3-devspaces-3']);
-  });
-});
-
-describe('journey: things go wrong', () => {
-  it('unauthenticated callers get nothing', async () => {
-    for (const path of [
-      '/api/v1/catalog',
-      '/api/v1/pp1/workspaces',
-      '/api/v1/pp1/pats',
-      '/api/v1/pp1/deployment-projects',
-    ]) {
-      expect((await e2e.anonymous('GET', path)).status).toBe(401);
+function renderBlock(obj: Record<string, unknown>, indent: string): string[] {
+  const entries = Object.entries(obj).filter(([, v]) => v !== undefined);
+  const width = Math.max(
+    0,
+    ...entries.filter(([, v]) => !isPlainObject(v) || Object.keys(v).length === 0).map(([k]) => k.length),
+  );
+  const lines: string[] = [];
+  for (const [key, value] of entries) {
+    if (isPlainObject(value) && Object.keys(value).length > 0) {
+      lines.push(`${indent}${key}:`);
+      lines.push(...renderBlock(value, `${indent}  `));
+    } else {
+      const text = isPlainObject(value) ? '{}' : blockValue(value);
+      lines.push(`${indent}${key.padEnd(width)} : ${text}`);
     }
-    expect((await e2e.anonymous('POST', '/api/v1/login', { username: 'x', password: 'y' })).status).toBe(401);
-  });
+  }
+  return lines;
+}
 
-  it('a registry outage is a clean 502 that creates nothing and is recorded', async () => {
-    e2e.registry.failing = true;
-    const res = await call('POST', '/api/v1/pp1/workspaces', {
-      editor: 'vscode',
-      stackVersion: '2.0.0',
-      devworkspaceValue: 'java-maven',
-      csiid: '1',
-    });
-    expect(res.status).toBe(502);
-    expect(res.body).toMatchObject({ code: 'UPSTREAM_ERROR' });
-    expect(e2e.fakes.kube.workspaces()).toHaveLength(0);
-    // recovery without restarting anything
-    e2e.registry.failing = false;
-    expect(
-      (
-        await call('POST', '/api/v1/pp1/workspaces', {
-          editor: 'vscode',
-          stackVersion: '2.0.0',
-          devworkspaceValue: 'java-maven',
-          csiid: '1',
-        })
-      ).status,
-    ).toBe(200);
-  });
+function canInline(fields: [string, unknown][]): boolean {
+  if (fields.length > MAX_INLINE_FIELDS) return false;
+  let total = 0;
+  for (const [k, v] of fields) {
+    if (!isPrimitive(v)) return false;
+    const text = inlineValue(v);
+    if (text.length > MAX_INLINE_VALUE) return false;
+    total += k.length + text.length + 3;
+  }
+  return total <= MAX_INLINE_TOTAL;
+}
 
-  it('a cluster failure while creating a workspace is recorded as a failed event', async () => {
-    e2e.fakes.kube.failOnce(
-      'create:DevWorkspace',
-      Object.assign(new Error('admission webhook denied the request'), { code: 500 }),
+/** `GET    /api/v1/x -> 200 (12 ms)` for the per-request log line, plus the fields that are not part of it. */
+function requestMessage(
+  fields: Record<string, unknown>,
+): { message: string; rest: Record<string, unknown> } | undefined {
+  const { method, path, status, ms, ...rest } = fields;
+  if (typeof method !== 'string' || typeof path !== 'string' || typeof status !== 'number') return undefined;
+  const took = typeof ms === 'number' ? ` (${ms} ms)` : '';
+  return { message: `${method.padEnd(6)} ${path} -> ${status}${took}`, rest };
+}
+
+/** One log entry as text. Multi-line entries end with a blank line so that entries stay visually separate. */
+export function formatPretty(entry: LogEntry, color: boolean): string {
+  const { file = 'unknown', function: functionName = 'module', line, ...data } = entry.fields;
+  const location = line === undefined ? String(file) : `${String(file)}:${String(line)}`;
+  const diagnostic = entry.kind === 'error' || entry.kind === 'warn';
+  const prefix = diagnostic
+    ? `[${formatLocalTime(entry.time)}] [${oneLine(location)}] [${oneLine(String(functionName))}]`
+    : `[${formatLocalTime(entry.time)}] [${logCategory(entry.event)}]`;
+  const sentence = diagnostic ? undefined : logMessage(entry.event, data);
+  if (sentence) {
+    const text = `${prefix} ${oneLine(sentence)}`;
+    const details =
+      entry.event === 'server.listening'
+        ? renderBlock(data, BLOCK_INDENT).map((detail) => `${prefix} ${detail}`)
+        : [];
+    const lines = [text, ...details];
+    return lines.map((line) => (color ? `${COLORS[entry.kind]}${line}${RESET}` : line)).join('\n');
+  }
+  const head = `${prefix} | ${BADGE[entry.kind]} | `;
+  const request = entry.event === 'request' ? requestMessage(data) : undefined;
+  const fields = Object.entries(request ? request.rest : data).filter(([, v]) => v !== undefined);
+  const lines: string[] = [];
+
+  if (fields.length === 0 && !request) {
+    lines.push(`${head}${entry.event}`);
+  } else if (canInline(fields)) {
+    const inline = fields.map(([k, v]) => `${k}=${inlineValue(v as Primitive)}`).join('  ');
+    const text = [request?.message, inline].filter(Boolean).join('  ');
+    lines.push(`${head}${entry.event.padEnd(EVENT_WIDTH)} | ${text}`);
+  } else {
+    lines.push(
+      request ? `${head}${entry.event.padEnd(EVENT_WIDTH)} | ${request.message}` : `${head}${entry.event}`,
     );
-    const res = await call('POST', '/api/v1/pp1/workspaces', {
-      editor: 'vscode',
-      stackVersion: '2.0.0',
-      devworkspaceValue: 'java-maven',
-      csiid: '1',
-    });
-    expect(res.status).toBe(500);
-    const [row] = await e2e.sql(
-      `SELECT status FROM metrics."devspaces-metrics" WHERE resourcetype = 'workspace'`,
-    );
-    expect(row?.status).toMatchObject({ failed: true });
-    expect(JSON.stringify(row?.status)).toContain('admission webhook denied');
-  });
+    lines.push(...renderBlock(Object.fromEntries(fields), BLOCK_INDENT).map((line) => `${prefix} ${line}`));
+    lines.push(''); // blank line after a multi-line entry
+  }
 
-  it('a metrics database outage never blocks the user', async () => {
-    // The harness uses pg-mem, so simulate the outage by breaking the recorder's store.
-    const original = e2e.container.metrics.insert.bind(e2e.container.metrics);
-    e2e.container.metrics.insert = async () => {
-      throw new Error('connection to metrics database lost');
-    };
-    try {
-      const res = await call('POST', '/api/v1/pp1/workspaces', {
-        editor: 'vscode',
-        stackVersion: '1.0.0',
-        devworkspaceValue: 'python',
-        csiid: '1',
-      });
-      expect(res.status).toBe(200);
-      expect((await call('GET', '/api/v1/pp1/workspaces')).body).toHaveLength(1);
-      expect((await e2e.anonymous('GET', '/api/v1/healthz')).status).toBe(200);
-    } finally {
-      e2e.container.metrics.insert = original;
+  const paint = (line: string): string =>
+    color && line !== '' ? `${COLORS[entry.kind]}${line}${RESET}` : line;
+  return lines.map(paint).join('\n');
+}
+
+/src/utils/log-message.ts
+type Fields = Record<string, unknown>;
+
+export function logCategory(event: string): string {
+  const category = event.split('.')[0] ?? 'application';
+  return (
+    (
+      {
+        workspace: 'Workspace',
+        namespace: 'Namespace',
+        deployment_namespace: 'Deployment',
+        server: 'Server',
+        request: 'HTTP',
+        email: 'Email',
+        configuration: 'Configuration',
+        support: 'Support',
+        metrics: 'Metrics',
+      } as Record<string, string>
+    )[category] ?? 'Application'
+  );
+}
+
+/** Sentences for operators; structured logs retain the event names and individual fields. */
+export function logMessage(event: string, fields: Fields): string | undefined {
+  const user = typeof fields.soeid === 'string' ? ` for user '${fields.soeid}'` : '';
+  const namespace = typeof fields.namespace === 'string' ? ` in namespace '${fields.namespace}'` : '';
+  const workspace = String(fields.workspace ?? '');
+  switch (event) {
+    case 'workspace.creating':
+      return `Creating a workspace from stack '${String(fields.stack)}'${user}${namespace}.`;
+    case 'workspace.created':
+      return `Created workspace resource '${workspace}'${user}${namespace}${fields.version && fields.editor ? ` (version: ${String(fields.version)}, editor: ${String(fields.editor)})` : ''}. Dev Spaces will now start it.`;
+    case 'workspace.starting':
+      return `Starting workspace '${workspace}'${user}${namespace}.`;
+    case 'workspace.stopping':
+      return `Stopping workspace '${workspace}'${user}${namespace}.`;
+    case 'workspace.deleting':
+      return `Deleting workspace '${workspace}'${user}${namespace}.`;
+    case 'workspace.started':
+      return `Requested startup of workspace '${workspace}'${user}${namespace}.`;
+    case 'workspace.stopped':
+      return `Requested stop of workspace '${workspace}'${user}${namespace}.`;
+    case 'workspace.deleted':
+      return `Successfully deleted workspace '${workspace}'${user}${namespace}.`;
+    case 'workspace.duration':
+      return `Workspace '${workspace}' ran for ${String(fields.duration)}${user}.`;
+    case 'workspace.repository_skipped':
+      return `No repository URL supplied${user}; creating the workspace from its stack without adding a repository.`;
+    case 'workspace.repository_default_branch':
+      return `No checkout branch supplied${user}; the repository will use its default branch.`;
+    case 'namespace.creating':
+      return `Creating namespace '${String(fields.namespace)}'${user}.`;
+    case 'namespace.resource_applied':
+      return `Applied ${String(fields.kind)} '${String(fields.name)}'${namespace}.`;
+    case 'deployment_namespace.created':
+      return `Successfully created deployment namespace '${String(fields.namespace)}'${user}.`;
+    case 'support.resources_applied':
+      return `Successfully reconciled ${String(fields.target)} resources${user}${namespace}.`;
+    case 'configuration.updated':
+      return `Updated runtime settings${Array.isArray(fields.keys) ? `: ${fields.keys.join(', ')}` : ''}.`;
+    case 'server.listening':
+      return `Workspace Manager is listening on port ${String(fields.port)}.`;
+    case 'server.shutdown':
+      return `Shutting down Workspace Manager${fields.signal ? ` after receiving ${String(fields.signal)}` : ''}.`;
+    case 'email.sent':
+      return `Successfully sent notification '${String(fields.subject)}'${user}.`;
+    case 'email.skipped':
+      return `Skipped notification '${String(fields.subject)}': ${String(fields.reason)}.`;
+    case 'request': {
+      if (
+        typeof fields.method !== 'string' ||
+        typeof fields.path !== 'string' ||
+        typeof fields.status !== 'number'
+      )
+        return undefined;
+      const duration = typeof fields.ms === 'number' ? `, ${fields.ms} ms` : '';
+      const requestId = typeof fields.requestId === 'string' ? ` Request ID: ${fields.requestId}.` : '';
+      return `${fields.method} ${fields.path} completed successfully${user} (HTTP ${fields.status}${duration}).${requestId}`;
     }
-  });
-
-  it('readiness reflects the cluster, liveness does not', async () => {
-    expect((await e2e.anonymous('GET', '/api/v1/readyz')).status).toBe(200);
-    e2e.fakes.kube.failOnce('ping', new Error('api server down'));
-    const down = await e2e.anonymous('GET', '/api/v1/readyz');
-    expect(down.status).toBe(503);
-    expect(down.body.checks.kubernetes).toBe('unavailable');
-    expect((await e2e.anonymous('GET', '/api/v1/healthz')).status).toBe(200);
-  });
-
-  it('answers malformed requests with 400s, not crashes', async () => {
-    const bad = await fetch(`${e2e.baseUrl}/api/v1/pp1/workspaces`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${(await e2e.login()).token}` },
-      body: '{"devworkspaceValue":',
-    });
-    expect(bad.status).toBe(400);
-    expect(((await bad.json()) as { code: string }).code).toBe('INVALID_JSON');
-    expect(
-      (
-        await call('POST', '/api/v1/pp1/workspaces', {
-          editor: 'vscode',
-          stackVersion: '2.0.0',
-          devworkspaceValue: '../../etc/passwd',
-          csiid: '1',
-        })
-      ).status,
-    ).toBe(400);
-    expect((await call('GET', '/api/v1/..%2F..%2Fetc/workspaces')).status).toBe(400);
-  });
-});
-
-describe('journey: versioned API only', () => {
-  it('rejects old paths and provisions through v1', async () => {
-    expect((await e2e.anonymous('POST', '/login', {})).status).toBe(404);
-    expect((await call('GET', '/pp1/workspaces')).status).toBe(404);
-    const project = await call('POST', '/api/v1/pp1/projects', { csiid: '7' });
-    expect(project.status).toBe(201);
-    expect(
-      (await call('PUT', '/api/v1/support/resources', { soeid: 'pp1', csiid: '7', target: 'workspace' }))
-        .status,
-    ).toBe(200);
-    const settings = await call('PATCH', '/api/v1/configuration', { MAX_RUNNING_WORKSPACES: 1 });
-    expect(settings.status).toBe(200);
-    expect((await call('GET', '/api/v1/logs?days=1')).status).toBe(200);
-  });
-});
-
-/tests/integration/deploy-cluster.test.ts
-import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { InMemoryKube } from '../helpers/InMemoryKube.js';
-import { startIntegration, type Integration } from '../helpers/integration.js';
-
-/** Dev Spaces cluster (001d) and a separate build/deploy cluster (004d), as in the original design. */
-let t: Integration;
-let deploy: InMemoryKube;
-
-beforeAll(async () => {
-  deploy = new InMemoryKube();
-  t = await startIntegration({}, { deployKube: deploy });
-});
-afterAll(() => t.close());
-
-describe('workspaces stay on the Dev Spaces cluster, deployment projects go to the deploy cluster', () => {
-  it('creates the deployment project (and its quotas, roles, bindings) only on the deploy cluster', async () => {
-    const res = await t.api('post', '/api/v1/pp1/deployment-projects').send({ csiid: '1001' });
-    expect(res.status).toBe(201);
-
-    expect(deploy.namespaces.has('pp1-devspaces-deploy-1001')).toBe(true);
-    expect([...deploy.objects.keys()].some((k) => k.startsWith('Role/pp1-devspaces-deploy-1001/'))).toBe(
-      true,
-    );
-    expect(t.fakes.kube.namespaces.size).toBe(0);
-    expect(t.fakes.kube.objects.size).toBe(0);
-  });
-
-  it('lists and deletes them on the deploy cluster', async () => {
-    expect((await t.api('get', '/api/v1/pp1/deployment-projects')).body).toEqual([
-      'pp1-devspaces-deploy-1001',
-    ]);
-    const res = await t.api('delete', '/api/v1/pp1/deployment-projects');
-    expect(res.body.deleted).toEqual(['pp1-devspaces-deploy-1001']);
-    expect(deploy.namespaces.size).toBe(0);
-  });
-
-  it('workspaces and projects are created on the Dev Spaces cluster, never on the deploy cluster', async () => {
-    const res = await t
-      .api('post', '/api/v1/pp1/workspaces')
-      .send({ editor: 'vscode', stackVersion: '2.0.0', devworkspaceValue: 'java-maven', csiid: '1001' });
-    expect(res.status).toBe(200);
-    expect(t.fakes.kube.workspaces('pp1-devspaces-1001')).toHaveLength(1);
-    expect(deploy.namespaces.size).toBe(0);
-    expect(deploy.objects.size).toBe(0);
-  });
-
-  it('personal access tokens and git config also belong to the Dev Spaces cluster', async () => {
-    const pat = `ghp_${'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8'}`;
-    expect((await t.api('post', '/api/v1/pp1/pats/main').send({ csiid: '1001', token: pat })).status).toBe(
-      201,
-    );
-    expect(
-      (await t.api('put', '/api/v1/pp1/gitconfig').send({ csiid: '1001', content: '[user]\n  name = P\n' }))
-        .status,
-    ).toBe(200);
-    expect(deploy.objects.size).toBe(0);
-  });
-});
-
-describe('readiness checks both clusters when they are different', () => {
-  it('logs authentication failures without exposing upstream messages or credentials', async () => {
-    const log = vi.spyOn(t.container.logger, 'error');
-    try {
-      t.fakes.kube.failOnce('ping', Object.assign(new Error('Bearer private-token'), { statusCode: 401 }));
-      expect((await request(t.app).get('/api/v1/readyz')).status).toBe(503);
-      expect(log).toHaveBeenCalledWith(
-        'readiness.check_failed',
-        expect.objectContaining({
-          dependency: 'kubernetes',
-          reason: 'authentication_failed',
-          httpStatus: 401,
-        }),
-      );
-      expect(JSON.stringify(log.mock.calls)).not.toContain('private-token');
-    } finally {
-      log.mockRestore();
-    }
-  });
-  it('reports each cluster', async () => {
-    const res = await request(t.app).get('/api/v1/readyz');
-    expect(res.status).toBe(200);
-    expect(res.body.checks).toEqual({ kubernetes: 'ok', deployCluster: 'ok', postgres: 'ok' });
-  });
-
-  it('is not ready when only the deploy cluster is down', async () => {
-    deploy.failOnce('ping', new Error('deploy cluster unreachable'));
-    const res = await request(t.app).get('/api/v1/readyz');
-    expect(res.status).toBe(503);
-    expect(res.body.checks).toEqual({ kubernetes: 'ok', deployCluster: 'unavailable', postgres: 'ok' });
-  });
-
-  it('is not ready when only the Dev Spaces cluster is down', async () => {
-    t.fakes.kube.failOnce('ping', new Error('dev spaces cluster unreachable'));
-    const res = await request(t.app).get('/api/v1/readyz');
-    expect(res.status).toBe(503);
-    expect(res.body.checks).toEqual({ kubernetes: 'unavailable', deployCluster: 'ok', postgres: 'ok' });
-  });
-});
-
-describe('with a single cluster (the default, as in the team’s current environment)', () => {
-  it('uses the same cluster for deployment projects and reports one cluster check', async () => {
-    const single = await startIntegration();
-    try {
-      expect(single.container.deployKube).toBe(single.container.kube);
-      expect((await single.api('post', '/api/v1/pp1/deployment-projects').send({ csiid: '5' })).status).toBe(
-        201,
-      );
-      expect(single.fakes.kube.namespaces.has('pp1-devspaces-deploy-5')).toBe(true);
-      const ready = await request(single.app).get('/api/v1/readyz');
-      expect(ready.body.checks).toEqual({ kubernetes: 'ok', postgres: 'ok' });
-    } finally {
-      await single.close();
-    }
-  });
-});
+    default:
+      return undefined;
+  }
+}
 
 /tests/integration/request-logging.test.ts
 import request from 'supertest';
@@ -1726,7 +1423,8 @@ beforeEach(() => {
   raw.length = 0;
 });
 
-const findRequest = (path: string) => raw.find((l) => l.includes('| request ') && l.includes(path));
+const findRequest = (path: string) =>
+  raw.find((l) => (l.includes('| request ') || l.includes('[HTTP]')) && l.includes(path));
 /** The line is written when the response has been sent, which can be a moment after the client has it. */
 async function requestLine(path: string): Promise<string | undefined> {
   for (let i = 0; i < 50 && !findRequest(path); i++) await new Promise((r) => setTimeout(r, 10));
@@ -1779,7 +1477,7 @@ describe('what the terminal shows for each API call', () => {
     const line = await requestLine('/api/v1/healthz');
     expect(line?.startsWith(COLORS.success)).toBe(true);
     expect(strip(line as string)).toMatch(
-      /\| OK {4}\| request +\| GET +\/api\/v1\/healthz -> 200 \(\d+ ms\) {2}requestId=[0-9a-f-]{36}$/,
+      /\[HTTP\] GET \/api\/v1\/healthz completed successfully \(HTTP 200, \d+ ms\)\. Request ID: [0-9a-f-]{36}\.$/,
     );
   });
 
@@ -1790,9 +1488,11 @@ describe('what the terminal shows for each API call', () => {
       .post('/api/v1/login')
       .send({ username: 'orion-admin', password: 'correct horse battery staple' });
     expect(strip((await requestLine('/api/v1/pp1/projects')) as string)).toContain(
-      'GET    /api/v1/pp1/projects -> 200',
+      'GET /api/v1/pp1/projects completed successfully',
     );
-    expect(strip((await requestLine('/api/v1/login')) as string)).toContain('POST   /api/v1/login -> 200');
+    expect(strip((await requestLine('/api/v1/login')) as string)).toContain(
+      'POST /api/v1/login completed successfully',
+    );
     // the query string is not part of the logged path
     expect(raw.join('\n')).not.toContain('csiid=1001 ->');
     expect(raw.join('\n')).not.toContain('?csiid');
@@ -1827,10 +1527,10 @@ describe('what the terminal shows for each API call', () => {
       .send({ editor: 'vscode', stackVersion: '2.0.0', devworkspaceValue: 'java-maven', csiid: '1001' });
     expect(res.status).toBe(200);
     expect((await requestLine('/api/v1/pp1/workspaces'))?.startsWith(COLORS.success)).toBe(true);
-    const created = raw.find((l) => l.includes('workspace.created'));
+    const created = raw.find((l) => l.includes('Created workspace resource'));
     expect(created?.startsWith(COLORS.success)).toBe(true);
     expect(strip(created as string)).toMatch(
-      /\| OK {4}\| workspace\.created +\| soeid=pp1 {2}namespace=pp1-devspaces-1001 {2}workspace=java-maven-[0-9a-f]{4}$/,
+      /\[Workspace\] Created workspace resource 'java-maven-[0-9a-f]{4}' for user 'pp1' in namespace 'pp1-devspaces-1001'/,
     );
   });
 
@@ -1842,10 +1542,12 @@ describe('what the terminal shows for each API call', () => {
     t.fakes.kube.setPhase('pp1-devspaces-1001', id, 'Running');
     raw.length = 0;
     await t.api('post', `/api/v1/pp1/workspaces/${id}/stop`);
-    expect(raw.find((l) => l.includes('workspace.stopped'))?.startsWith(COLORS.success)).toBe(true);
+    expect(raw.find((l) => l.includes('Requested stop of workspace'))?.startsWith(COLORS.success)).toBe(true);
     t.fakes.kube.setPhase('pp1-devspaces-1001', id, 'Stopped');
     await t.api('post', `/api/v1/pp1/workspaces/${id}/start`);
-    expect(raw.find((l) => l.includes('workspace.started'))?.startsWith(COLORS.success)).toBe(true);
+    expect(raw.find((l) => l.includes('Requested startup of workspace'))?.startsWith(COLORS.success)).toBe(
+      true,
+    );
   });
 
   it('never prints a secret, and every entry stays readable text', async () => {
@@ -1856,428 +1558,6 @@ describe('what the terminal shows for each API call', () => {
     for (const line of raw) expect(line).not.toMatch(/\{"time"|\[object Object\]|undefined/);
   });
 });
-
-/tests/integration/workspace-create-contract.test.ts
-import request from 'supertest';
-import { describe, expect, it } from 'vitest';
-import { makeContainer } from '../helpers/testkit.js';
-import { createApp } from '../../src/app.js';
-import { signToken } from '../../src/http/auth.js';
-import { createLogger } from '../../src/utils/logger.js';
-
-const payload = {
-  devworkspaceValue: 'citi-optimus',
-  csiid: '177398',
-  editorType: 'che-code',
-  stackVersion: '8.1.1',
-};
-function setup() {
-  const { container, fakes } = makeContainer();
-  fakes.registry.catalog.push({ name: 'citi-optimus', versions: [{ version: '8.1.1' }] });
-  const logs: Record<string, unknown>[] = [];
-  container.logger = createLogger('debug', (line) => logs.push(JSON.parse(line)));
-  const app = createApp(container);
-  const token = signToken(container.config.auth, { soeid: 'pp58386', role: 'admin' });
-  const create = (body: object) =>
-    request(app).post('/api/v1/pp58386/workspaces').set('Authorization', `Bearer ${token}`).send(body);
-  return { container, fakes, logs, create };
-}
-
-describe('workspace creation payload', () => {
-  it('accepts the supplied Optimus request and adds the post-start branch setup', async () => {
-    const { create, fakes } = setup();
-    const response = await create({
-      ...payload,
-      repositoryUrl: 'https://github.com/CitiInternal1/devspaces-developer-quickstart.git',
-      repositoryCheckoutBranch: 'optimus',
-    });
-    expect(response.status).toBe(200);
-    expect(response.body).toMatchObject({
-      stack: 'citi-optimus',
-      version: '8.1.1',
-      editor: 'Visual Studio Code',
-    });
-    const template = fakes.kube.workspaces()[0]?.spec?.template;
-    expect(template?.projects).toEqual([
-      {
-        name: 'default-project',
-        git: { remotes: { origin: 'https://github.com/CitiInternal1/devspaces-developer-quickstart.git' } },
-      },
-    ]);
-    expect(JSON.stringify(template?.commands)).toContain("TARGET_BRANCH='optimus'");
-    expect(template?.events).toMatchObject({ postStart: ['build', 'workspace-manager-setup'] });
-  });
-  it.each([
-    {},
-    { repositoryUrl: '', repositoryCheckoutBranch: '' },
-    { repositoryUrl: null, repositoryCheckoutBranch: null },
-    { repositoryCheckoutBranch: 'optimus' },
-  ])('creates without optional repository settings: %j', async (optional) => {
-    const { create, fakes } = setup();
-    expect((await create({ ...payload, ...optional })).status).toBe(200);
-    expect(fakes.kube.workspaces()[0]?.spec?.template?.projects).toBeUndefined();
-  });
-  it('creates with a repository URL and no requested branch', async () => {
-    const { create } = setup();
-    expect((await create({ ...payload, repositoryUrl: 'https://github.com/acme/app.git' })).status).toBe(200);
-  });
-  it.each(['devworkspaceValue', 'csiid', 'editorType', 'stackVersion'])(
-    'rejects a missing %s with field details and the actual validation source',
-    async (field) => {
-      const { create, logs, fakes } = setup();
-      const body = { ...payload } as Record<string, unknown>;
-      delete body[field];
-      const response = await create(body);
-      expect(response.status).toBe(400);
-      expect(response.body.details).toContainEqual(expect.objectContaining({ field }));
-      const failure = logs.find((log) => log.event === 'request.failed');
-      const summary = logs.find((log) => log.event === 'request');
-      expect(failure).toMatchObject({ file: 'schemas.ts', function: 'parse', code: 'VALIDATION_ERROR' });
-      expect(summary).toMatchObject({ file: 'schemas.ts', function: 'parse', code: 'VALIDATION_ERROR' });
-      expect(failure?.line).toBe(summary?.line);
-      expect(fakes.kube.workspaces()).toHaveLength(0);
-    },
-  );
-});
-
-/tests/integration/workspace-setup.test.ts
-import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
-import { tmpdir } from 'node:os';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { buildWorkspaceSetupCommand } from '../../src/factories/workspace-setup.js';
-
-const bash = process.platform === 'win32' ? 'C:/Program Files/Git/bin/bash.exe' : 'bash';
-let directory: string;
-beforeEach(() => {
-  directory = mkdtempSync(join(tmpdir(), 'workspace-setup-'));
-});
-afterEach(() => {
-  rmSync(directory, { recursive: true, force: true });
-});
-function git(...args: string[]) {
-  const result = spawnSync('git', args, { cwd: directory, encoding: 'utf8' });
-  if (result.status !== 0) throw new Error(result.stderr);
-  return result.stdout.trim();
-}
-function run(repositoryUrl?: string, repositoryBranch?: string, stack = 'citi-optimus') {
-  const log = join(directory, 'setup.log');
-  const result = spawnSync(
-    bash,
-    ['-c', buildWorkspaceSetupCommand({ stack, repositoryUrl, repositoryBranch })],
-    {
-      cwd: directory,
-      encoding: 'utf8',
-      env: {
-        ...process.env,
-        WORKSPACE_REPOSITORY_DIR: directory.replaceAll('\\', '/'),
-        WORKSPACE_SETUP_LOG: log.replaceAll('\\', '/'),
-        WORKSPACE_MTA_DIR: join(directory, 'missing-analyzer').replaceAll('\\', '/'),
-        WORKSPACE_SETTINGS_PATH: join(directory, 'missing-settings').replaceAll('\\', '/'),
-      },
-    },
-  );
-  expect(result.error).toBeUndefined();
-  expect(result.status, result.stderr).toBe(0);
-  return readFileSync(log, 'utf8');
-}
-function repository() {
-  git('init', '-b', 'main');
-  git(
-    '-c',
-    'user.name=Test',
-    '-c',
-    'user.email=test@example.com',
-    'commit',
-    '--allow-empty',
-    '-m',
-    'fixture',
-  );
-}
-
-describe('workspace post-start setup', () => {
-  it('continues without a repository, analyzer binary, or settings', () => {
-    expect(run()).toContain('No repositoryUrl supplied');
-  });
-  it('continues when the clone directory has no Git repository', () => {
-    expect(run('https://example.com/app.git', 'optimus')).toContain(
-      'Cloned repository directory unavailable',
-    );
-  });
-  it('checks out an existing requested branch', () => {
-    repository();
-    git('branch', 'optimus');
-    run('https://example.com/app.git', 'optimus');
-    expect(git('branch', '--show-current')).toBe('optimus');
-  });
-  it('creates a local branch when it is absent', () => {
-    repository();
-    run('https://example.com/app.git', 'optimus');
-    expect(git('branch', '--show-current')).toBe('optimus');
-  });
-  it('keeps the default branch when no branch is provided', () => {
-    repository();
-    run('https://example.com/app.git');
-    expect(git('branch', '--show-current')).toBe('main');
-  });
-  it('continues after Git fetch failure', () => {
-    repository();
-    git('remote', 'add', 'origin', join(directory, 'missing-remote'));
-    expect(run('https://example.com/app.git', 'optimus')).toContain('Git fetch failed');
-  });
-  it('quotes request data rather than executing it as shell code', () => {
-    run(undefined, undefined, "x'; exit 71 #");
-    expect(existsSync(join(directory, 'setup.log'))).toBe(true);
-  });
-});
-
-/tests/integration/workspaces.test.ts
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { startIntegration, type Integration } from '../helpers/integration.js';
-
-let t: Integration;
-beforeAll(async () => {
-  t = await startIntegration();
-});
-afterAll(() => t.close());
-beforeEach(async () => {
-  t.fakes.kube.namespaces.clear();
-  t.fakes.kube.objects.clear();
-  await t.sql('DELETE FROM metrics."devspaces-metrics"');
-  t.registry.failing = false;
-});
-
-const base = '/api/v1/pp1/workspaces';
-const body = { editor: 'vscode', stackVersion: '2.0.0', devworkspaceValue: 'java-maven', csiid: '1001' };
-
-describe('GET /api/v1/catalog', () => {
-  it('returns the registry catalog over real HTTP', async () => {
-    const res = await t.api('get', '/api/v1/catalog');
-    expect(res.status).toBe(200);
-    expect(res.body.map((e: { name: string }) => e.name)).toEqual(['java-maven', 'python']);
-  });
-
-  it('answers 502 when the registry is down', async () => {
-    t.registry.failing = true;
-    const res = await t.api('get', '/api/v1/catalog');
-    expect(res.status).toBe(502);
-    expect(res.body.code).toBe('UPSTREAM_ERROR');
-  });
-});
-
-describe('POST /api/v1/:soeid/workspaces', () => {
-  it('creates the project and the workspace, and records both', async () => {
-    const res = await t.api('post', base).send(body);
-    expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({
-      namespace: 'pp1-devspaces-1001',
-      csiid: '1001',
-      stack: 'java-maven',
-      version: '2.0.0',
-      displayName: 'Java Maven',
-      editor: 'Visual Studio Code',
-      limitcpu: 2,
-      limitmemory: 4,
-      storage: 3,
-    });
-
-    expect(t.fakes.kube.workspaces('pp1-devspaces-1001')).toHaveLength(1);
-    expect(registryPaths()).toEqual(['GET /v2index/all', 'GET /devfiles/java-maven/2.0.0']);
-
-    const rows = await t.metricsRows();
-    expect(rows.map((r) => `${r.eventtype}:${r.resourcetype}`)).toEqual([
-      'create:project',
-      'create:workspace',
-    ]);
-    expect(rows[1]).toMatchObject({
-      soeid: 'pp1',
-      csiid: '1001',
-      workspaceversion: '2.0.0',
-      editorname: 'vscode',
-    });
-    expect(Number(rows[1]?.limitcpu)).toBe(2);
-    expect(rows[1]?.status).toEqual({ failed: false, error: '', message: '' });
-  });
-
-  it('does not recreate the project for a second workspace', async () => {
-    await t.api('post', base).send(body);
-    await t.api('post', base).send(body);
-    const rows = await t.metricsRows();
-    expect(rows.filter((r) => r.resourcetype === 'project')).toHaveLength(1);
-    expect(rows.filter((r) => r.resourcetype === 'workspace')).toHaveLength(2);
-  });
-
-  it('honours editor, stack version and repository', async () => {
-    const res = await t.api('post', base).send({
-      ...body,
-      editor: 'intellij',
-      stackVersion: '1.0.0',
-      repositoryUrl: 'https://github.com/acme/app.git',
-      repositoryBranch: 'main',
-    });
-    expect(res.status).toBe(200);
-    expect(res.body.version).toBe('1.0.0');
-    const dw = t.fakes.kube.workspaces()[0];
-    expect(dw?.spec?.template?.projects).toEqual([
-      {
-        name: 'default-project',
-        git: { remotes: { origin: 'https://github.com/acme/app.git' } },
-      },
-    ]);
-    expect(dw?.spec?.template?.components?.some((c) => c.name === 'che-idea-server')).toBe(true);
-  });
-
-  it('answers 404 for an unknown stack and creates nothing', async () => {
-    const res = await t.api('post', base).send({ ...body, devworkspaceValue: 'cobol' });
-    expect(res.status).toBe(404);
-    expect(res.body).toMatchObject({ code: 'WORKSPACE_CONFIG_NOT_FOUND' });
-    expect(t.fakes.kube.workspaces()).toHaveLength(0);
-  });
-
-  it('answers 502 when the registry fails mid-create', async () => {
-    t.registry.failing = true;
-    const res = await t.api('post', base).send(body);
-    expect(res.status).toBe(502);
-    expect(t.fakes.kube.workspaces()).toHaveLength(0);
-  });
-
-  it.each([
-    ['missing stack', { csiid: '1' }],
-    ['bad csiid', { ...body, csiid: 'x' }],
-    ['unknown field', { ...body, sneaky: true }],
-    ['http repository', { ...body, repositoryUrl: 'http://github.com/a/b' }],
-  ])('answers 400 for %s', async (_l, payload) => {
-    const res = await t.api('post', base).send(payload);
-    expect(res.status).toBe(400);
-    expect(res.body.code).toBe('VALIDATION_ERROR');
-  });
-
-  it('answers 409 once the running limit (2) is reached', async () => {
-    await t.api('post', base).send(body);
-    await t.api('post', base).send(body);
-    const res = await t.api('post', base).send(body);
-    expect(res.status).toBe(409);
-    expect(res.body).toMatchObject({ code: 'WORKSPACE_RUN_COUNT_EXCEEDED' });
-    expect(res.body.message).toMatch(/limit is 2/);
-  });
-
-  it('answers 409 once the total limit (3) is reached', async () => {
-    for (let i = 0; i < 3; i++) {
-      const res = await t.api('post', base).send(body);
-      expect(res.status).toBe(200);
-      t.fakes.kube.setPhase('pp1-devspaces-1001', res.body.id, 'Stopped');
-    }
-    const res = await t.api('post', base).send(body);
-    expect(res.status).toBe(409);
-    expect(res.body.code).toBe('WORKSPACE_COUNT_EXCEEDED');
-  });
-
-  it('records a failed metric and answers 502 when the cluster rejects the workspace', async () => {
-    t.fakes.kube.failOnce('create:DevWorkspace', Object.assign(new Error('denied'), { code: 500 }));
-    const res = await t.api('post', base).send(body);
-    expect(res.status).toBe(500);
-    const failed = (await t.metricsRows()).find((r) => r.resourcetype === 'workspace');
-    expect(failed?.status).toMatchObject({ failed: true });
-  });
-
-  it('refuses to use a namespace owned by someone else', async () => {
-    t.fakes.kube.seedNamespace('pp1-devspaces-1001', 'intruder', '1001');
-    const res = await t.api('post', base).send(body);
-    expect(res.status).toBe(409);
-    expect(res.body.code).toBe('NAMESPACE_OWNERSHIP_MISMATCH');
-  });
-});
-
-describe('workspace lifecycle', () => {
-  async function created() {
-    const res = await t.api('post', base).send(body);
-    return res.body as { id: string; namespace: string };
-  }
-
-  it('lists and gets only the caller’s workspaces', async () => {
-    const ws = await created();
-    expect((await t.api('get', base)).body.map((w: { id: string }) => w.id)).toEqual([ws.id]);
-    expect((await t.api('get', `${base}/${ws.id}`)).body.id).toBe(ws.id);
-    expect((await t.api('get', '/api/v1/pp2/workspaces')).body).toEqual([]);
-    expect((await t.api('get', `/api/v1/pp2/workspaces/${ws.id}`)).status).toBe(404);
-  });
-
-  it('reflects the cluster’s phase and URL', async () => {
-    const ws = await created();
-    t.fakes.kube.setPhase(ws.namespace, ws.id, 'Running', 'https://ws.example/ide');
-    const res = await t.api('get', `${base}/${ws.id}`);
-    expect(res.body).toMatchObject({ phase: 'Running', mainUrl: 'https://ws.example/ide' });
-  });
-
-  it('stops then starts, with metrics for each', async () => {
-    const ws = await created();
-    t.fakes.kube.setPhase(ws.namespace, ws.id, 'Running');
-    t.fakes.clock.advance(3 * 60 * 1000);
-
-    const stop = await t.api('post', `${base}/${ws.id}/stop`);
-    expect(stop.status).toBe(200);
-    expect(stop.body.message).toBe(`Workspace with id ${ws.id} is stopping.`);
-    expect(t.fakes.kube.workspaces()[0]?.spec?.started).toBe(false);
-
-    t.fakes.kube.setPhase(ws.namespace, ws.id, 'Stopped');
-    const start = await t.api('post', `${base}/${ws.id}/start`);
-    expect(start.status).toBe(200);
-    expect(start.body.message).toBe(`Workspace with id ${ws.id} is starting.`);
-    expect(t.fakes.kube.workspaces()[0]?.spec?.started).toBe(true);
-
-    const rows = await t.metricsRows();
-    expect(rows.map((r) => r.eventtype)).toEqual(['create', 'create', 'stop', 'start']);
-    expect(rows[2]?.duration).toBe('3 minutes');
-  });
-
-  it('refuses to start a third running workspace', async () => {
-    const a = await created();
-    t.fakes.kube.setPhase(a.namespace, a.id, 'Stopped');
-    const b = await created();
-    t.fakes.kube.setPhase(b.namespace, b.id, 'Stopped');
-    const c = await created();
-    t.fakes.kube.setPhase(c.namespace, c.id, 'Stopped');
-    t.fakes.kube.setPhase(a.namespace, a.id, 'Running');
-    t.fakes.kube.setPhase(b.namespace, b.id, 'Running');
-    const res = await t.api('post', `${base}/${c.id}/start`);
-    expect(res.status).toBe(409);
-  });
-
-  it('deletes a workspace and records its lifetime', async () => {
-    const ws = await created();
-    t.fakes.clock.advance(2 * 60 * 60 * 1000);
-    const res = await t.api('delete', `${base}/${ws.id}`);
-    expect(res.status).toBe(200);
-    expect(res.body.message).toBe(`Workspace with id ${ws.id} is terminating.`);
-    expect(t.fakes.kube.workspaces()).toHaveLength(0);
-    const last = (await t.metricsRows()).at(-1);
-    expect(last).toMatchObject({ eventtype: 'delete', duration: '2 hours' });
-  });
-
-  it.each([
-    ['get', ''],
-    ['delete', ''],
-    ['post', '/start'],
-    ['post', '/stop'],
-  ] as const)('answers 404 for %s %s on an unknown workspace', async (method, suffix) => {
-    const res = await t.api(method, `${base}/ghost${suffix}`);
-    expect(res.status).toBe(404);
-    expect(res.body.code).toBe('WORKSPACE_NOT_FOUND');
-  });
-
-  it('GET /projects lists the user’s projects', async () => {
-    await created();
-    const res = await t.api('get', '/api/v1/pp1/projects');
-    expect(res.body).toEqual([
-      expect.objectContaining({ name: 'pp1-devspaces-1001', csiid: '1001', soeid: 'pp1' }),
-    ]);
-  });
-});
-
-function registryPaths(): string[] {
-  return t.registry.requests.slice(-2);
-}
 
 /tests/unit/factories/workspace-factory.test.ts
 import { describe, expect, it } from 'vitest';
@@ -2301,6 +1581,15 @@ const args = (over: Partial<Parameters<typeof buildDevWorkspaceObject>[0]> = {})
 });
 
 describe('buildDevWorkspaceObject', () => {
+  it('uses the configured internal plugin registry without a dashboard API URL', () => {
+    const dw = buildDevWorkspaceObject(
+      args({ editorRegistryUrl: 'http://internal-editor-registry:8080/v3/' }),
+    );
+    expect(dw.spec?.contributions?.[0]?.uri).toBe(
+      'http://internal-editor-registry:8080/v3/plugins/che-incubator/che-code/latest/devfile.yaml',
+    );
+    expect(dw.spec?.contributions?.[0]?.uri).not.toContain('/dashboard/api/');
+  });
   it('preserves lifecycle events and avoids setup command ID collisions', () => {
     const dw = buildDevWorkspaceObject(
       args({
@@ -2346,7 +1635,7 @@ describe('buildDevWorkspaceObject', () => {
     expect(dw.spec?.contributions).toEqual([
       {
         name: 'ide',
-        uri: 'https://devspaces.test/dashboard/api/editors/devfile?che-editor=che-incubator/che-code/latest',
+        uri: 'https://devspaces.test/plugin-registry/v3/plugins/che-incubator/che-code/latest/devfile.yaml',
       },
     ]);
   });
@@ -2356,7 +1645,7 @@ describe('buildDevWorkspaceObject', () => {
       args({ editor: 'intellij', editorId: 'che-incubator/che-idea-server/latest' }),
     );
     expect(dw.spec?.contributions?.[0]?.uri).toBe(
-      'https://devspaces.test/dashboard/api/editors/devfile?che-editor=che-incubator/che-idea-server/latest',
+      'https://devspaces.test/plugin-registry/v3/plugins/che-incubator/che-idea-server/latest/devfile.yaml',
     );
     expect(dw.spec?.contributions?.[0]?.uri).not.toMatch(/che-incubator.*che-incubator/);
   });
@@ -2453,200 +1742,475 @@ describe('buildLogRecord', () => {
   });
 });
 
-/tests/unit/http/errors-schemas.test.ts
-import type { NextFunction, Request, Response } from 'express';
+/tests/unit/utils/log-format.test.ts
 import { describe, expect, it } from 'vitest';
-import { asyncHandler, createErrorHandler, errorBody, notFoundHandler } from '../../../src/http/errors.js';
 import {
-  createWorkspaceSchema,
-  gitConfigBodySchema,
-  loginSchema,
-  parse,
-  patBodySchema,
-} from '../../../src/http/schemas.js';
-import { BadRequestError, ConflictError, UpstreamError } from '../../../src/utils/errors.js';
-import { createLogger } from '../../../src/utils/logger.js';
+  COLORS,
+  RESET,
+  formatLocalTime,
+  formatPretty,
+  type LogEntry,
+  type LogKind,
+} from '../../../src/utils/log-format.js';
 
-function fakeRes() {
-  const res = {
-    locals: { requestId: 'rid' },
-    headersSent: false,
-    statusCode: 200,
-    body: undefined as unknown,
-    status(code: number) {
-      this.statusCode = code;
-      return this;
-    },
-    json(b: unknown) {
-      this.body = b;
-      return this;
-    },
-  };
-  return res;
-}
+const time = new Date(2026, 0, 2, 3, 4, 5, 678); // local time, as the formatter prints it
+const T = '[2026-01-02 03:04:05] [unknown] [module]';
+const entry = (kind: LogKind, event: string, fields: Record<string, unknown> = {}): LogEntry => ({
+  time,
+  kind,
+  event,
+  fields,
+});
+const plain = (e: LogEntry) => formatPretty(e, false);
 
-function handle(err: unknown) {
-  const logs: Record<string, unknown>[] = [];
-  const handler = createErrorHandler(createLogger('debug', (l) => logs.push(JSON.parse(l))));
-  const res = fakeRes();
-  let forwarded: unknown;
-  handler(
-    err,
-    { path: '/x' } as Request,
-    res as unknown as Response,
-    ((e?: unknown) => (forwarded = e)) as NextFunction,
+describe('colours: errors red, warnings orange, successes green, everything else white', () => {
+  it('uses exactly these ANSI codes', () => {
+    expect(COLORS.error).toBe('\u001b[31m'); // red
+    expect(COLORS.warn).toBe('\u001b[38;5;208m'); // orange
+    expect(COLORS.success).toBe('\u001b[32m'); // green
+    expect(COLORS.info).toBe('\u001b[97m'); // bright white
+    expect(COLORS.debug).toBe(COLORS.info); // white as well
+  });
+
+  it.each(['error', 'warn', 'success', 'info', 'debug'] as const)(
+    '%s line is painted in its colour',
+    (kind) => {
+      const out = formatPretty(entry(kind, 'some.event', { a: 1 }), true);
+      expect(out.startsWith(COLORS[kind])).toBe(true);
+      expect(out.endsWith(RESET)).toBe(true);
+    },
   );
-  return { res, logs, forwarded };
-}
 
-describe('error handler', () => {
-  it('maps AppErrors to their status and the standard body', () => {
-    const { res } = handle(new ConflictError('taken', 'PAT_EXISTS'));
-    expect(res.statusCode).toBe(409);
-    expect(res.body).toEqual({ error: 'taken', message: 'taken', code: 'PAT_EXISTS' });
-  });
-
-  it('logs both server and client failures', () => {
-    expect(handle(new UpstreamError('cluster down')).logs).toHaveLength(1);
-    expect(handle(new BadRequestError('bad')).logs).toHaveLength(1);
+  it('every line of a multi-line entry is painted on its own, the separating blank line is not', () => {
+    const out = formatPretty(entry('error', 'boom', { a: { b: 1 }, c: 2 }), true);
+    const lines = out.split('\n');
+    expect(lines.length).toBeGreaterThan(3);
+    expect(lines.at(-1)).toBe('');
+    for (const line of lines.slice(0, -1)) {
+      expect(line.startsWith(COLORS.error), line).toBe(true);
+      expect(line.endsWith(RESET), line).toBe(true);
+      expect(line.slice(COLORS.error.length, -RESET.length)).not.toContain('\u001b');
+    }
   });
 
-  it('maps body-parser failures', () => {
-    expect(handle(Object.assign(new Error('x'), { type: 'entity.parse.failed' })).res.statusCode).toBe(400);
-    expect(handle(Object.assign(new Error('x'), { type: 'entity.too.large' })).res.statusCode).toBe(413);
-  });
-
-  it('hides internals of unexpected errors', () => {
-    const { res, logs } = handle(new Error('db password is hunter2'));
-    expect(res.statusCode).toBe(500);
-    expect(res.body).toEqual({
-      error: 'Internal server error',
-      message: 'Internal server error',
-      code: 'INTERNAL_ERROR',
-    });
-    expect(JSON.stringify(res.body)).not.toContain('hunter2');
-    expect(logs[0]).toMatchObject({ event: 'request.crashed', requestId: 'rid' });
-  });
-
-  it('defers to express when headers are already sent', () => {
-    const logs: string[] = [];
-    const handler = createErrorHandler(createLogger('debug', (l) => logs.push(l)));
-    const res = { ...fakeRes(), headersSent: true };
-    let forwarded: unknown;
-    const err = new Error('late');
-    handler(
-      err,
-      {} as Request,
-      res as unknown as Response,
-      ((e?: unknown) => (forwarded = e)) as NextFunction,
-    );
-    expect(forwarded).toBe(err);
-  });
-
-  it('404 handler names the route', () => {
-    const res = fakeRes();
-    notFoundHandler(
-      { method: 'GET', path: '/nope' } as Request,
-      res as unknown as Response,
-      ((error: unknown) =>
-        createErrorHandler(createLogger('silent'))(
-          error,
-          { method: 'GET', path: '/nope' } as Request,
-          res as unknown as Response,
-          (() => undefined) as NextFunction,
-        )) as NextFunction,
-    );
-    expect(res.statusCode).toBe(404);
-    expect(res.body).toEqual(errorBody('Route not found: GET /nope', 'ROUTE_NOT_FOUND'));
-  });
-});
-
-describe('asyncHandler', () => {
-  it('forwards rejections to next()', async () => {
-    const boom = new Error('async boom');
-    let forwarded: unknown;
-    asyncHandler(async () => {
-      throw boom;
-    })({} as Request, {} as Response, ((e?: unknown) => (forwarded = e)) as NextFunction);
-    await new Promise((r) => setImmediate(r));
-    expect(forwarded).toBe(boom);
-  });
-});
-
-describe('createWorkspaceSchema', () => {
-  const ok = { editor: 'vscode', stackVersion: '2.0.0', devworkspaceValue: 'java-maven', csiid: '177398' };
-
-  it('accepts required fields and numeric csiid', () => {
-    expect(parse(createWorkspaceSchema, { ...ok, csiid: 177398 })).toEqual({ ...ok, editor: 'vscode' });
-  });
-  it('accepts all optional fields', () => {
-    const body = {
-      ...ok,
-      editor: 'goland',
-      stackVersion: '2.0.0',
-      repositoryUrl: 'https://github.com/acme/app.git',
-      repositoryBranch: 'feature/x-1',
-    };
-    expect(parse(createWorkspaceSchema, body)).toMatchObject(body);
-  });
-  it.each([
-    ['missing stack', { csiid: '1' }],
-    ['non-numeric csiid', { ...ok, csiid: 'abc' }],
-    ['unknown editor', { ...ok, editor: 'emacs' }],
-    ['stack with slash', { ...ok, devworkspaceValue: '../etc' }],
-    ['http repo url', { ...ok, repositoryUrl: 'http://github.com/a/b' }],
-    ['ssh repo url', { ...ok, repositoryUrl: 'git@github.com:a/b.git' }],
-    ['bad branch', { ...ok, repositoryBranch: 'a b;rm' }],
-    ['unknown property', { ...ok, admin: true }],
-    ['empty body', undefined],
-  ])('rejects %s with a 400 listing the problem', (_l, body) => {
-    expect(() => parse(createWorkspaceSchema, body)).toThrow(BadRequestError);
-  });
-});
-
-describe('other schemas', () => {
-  it('login needs both fields and nothing else', () => {
-    expect(parse(loginSchema, { username: 'a', password: 'b' })).toEqual({ username: 'a', password: 'b' });
-    expect(() => parse(loginSchema, { username: 'a' })).toThrow(BadRequestError);
-    expect(() => parse(loginSchema, { username: 'a', password: 'b', extra: 1 })).toThrow(BadRequestError);
-  });
-  it('pat and gitconfig bodies', () => {
-    expect(parse(patBodySchema, { csiid: 5, token: 't' })).toEqual({ csiid: '5', token: 't' });
-    expect(() => parse(patBodySchema, { csiid: '5' })).toThrow(BadRequestError);
-    expect(parse(gitConfigBodySchema, { csiid: '5', content: 'x' }).content).toBe('x');
-    expect(() => parse(gitConfigBodySchema, { csiid: '5', content: '' })).toThrow(BadRequestError);
-  });
-  it('error messages name the field', () => {
-    try {
-      parse(createWorkspaceSchema, {
-        editor: 'vscode',
-        stackVersion: '2.0.0',
-        devworkspaceValue: 'x',
-        csiid: 'abc',
-      });
-      expect.unreachable();
-    } catch (e) {
-      expect((e as Error).message).toContain('csiid');
-      expect((e as BadRequestError).code).toBe('VALIDATION_ERROR');
+  it('prints no escape codes at all when colour is off', () => {
+    for (const kind of ['error', 'warn', 'success', 'info', 'debug'] as const) {
+      expect(plain(entry(kind, 'e', { a: { b: 1 } }))).not.toContain('\u001b');
     }
   });
 });
 
+describe('layout', () => {
+  it('describes successful workspace creation in English without source-location noise', () => {
+    const output = plain(
+      entry('success', 'workspace.created', {
+        workspace: 'optimus-1234',
+        soeid: 'pp1',
+        namespace: 'pp1-devspaces-1',
+        version: '8.1.1',
+        editor: 'che-code',
+        file: 'WorkspaceService.ts',
+        function: 'create',
+        line: 160,
+      }),
+    );
+    expect(output).toContain(
+      "[Workspace] Created workspace resource 'optimus-1234' for user 'pp1' in namespace 'pp1-devspaces-1'",
+    );
+    expect(output).toContain('version: 8.1.1, editor: che-code');
+    expect(output).not.toMatch(/WorkspaceService\.ts|workspace\.created|\[create\]/);
+  });
+  it('formats local time as YYYY-MM-DD HH:mm:ss', () => {
+    expect(formatLocalTime(time)).toBe('2026-01-02 03:04:05');
+    expect(formatLocalTime(new Date(2026, 10, 9, 23, 59, 1, 5))).toBe('2026-11-09 23:59:01');
+  });
+
+  it('a bare event is one line: time | LEVEL | event', () => {
+    expect(plain(entry('info', 'server.shutdown'))).toBe(
+      '[2026-01-02 03:04:05] [Server] Shutting down Workspace Manager.',
+    );
+  });
+
+  it('level badges all have the same width so the columns line up', () => {
+    const widths = (['error', 'warn', 'success', 'info', 'debug'] as const).map(
+      (k) => plain(entry(k, 'e')).split('|')[1]?.length,
+    );
+    expect(new Set(widths).size).toBe(1);
+    expect(plain(entry('error', 'e'))).toContain('| ERROR |');
+    expect(plain(entry('warn', 'e'))).toContain('| WARN  |');
+    expect(plain(entry('success', 'e'))).toContain('| OK    |');
+    expect(plain(entry('debug', 'e'))).toContain('| DEBUG |');
+  });
+
+  it('a few short fields stay on the same line, as key=value separated by two spaces', () => {
+    expect(plain(entry('warn', 'metrics.columns_missing', { table: 't1', missing: 'a,b' }))).toBe(
+      `${T} | WARN  | ${'metrics.columns_missing'.padEnd(30)} | table=t1  missing=a,b`,
+    );
+  });
+
+  it('quotes inline values that contain spaces or =, and escapes newlines', () => {
+    const out = plain(
+      entry('error', 'x', { error: 'cluster is down', eq: 'a=b', multi: 'l1\nl2', bare: 'ok-1' }),
+    );
+    expect(out).toContain('error="cluster is down"');
+    expect(out).toContain('eq="a=b"');
+    expect(out).toContain('multi=l1\\nl2'); // the newline becomes a visible \n, so the entry stays on one line
+    expect(out).toContain('bare=ok-1');
+    expect(out.split('\n')).toHaveLength(1);
+  });
+
+  it('shows the per-request line as: METHOD path -> status (ms) plus the ids', () => {
+    const out = plain(
+      entry('success', 'request', {
+        method: 'GET',
+        path: '/api/v1/pp1/workspaces',
+        status: 200,
+        ms: 12,
+        requestId: 'r-1',
+        soeid: 'pp1',
+      }),
+    );
+    expect(out).toBe(
+      "[2026-01-02 03:04:05] [HTTP] GET /api/v1/pp1/workspaces completed successfully for user 'pp1' (HTTP 200, 12 ms). Request ID: r-1.",
+    );
+  });
+
+  it('leaves out fields that have no value (a request without a user)', () => {
+    const out = plain(
+      entry('success', 'request', {
+        method: 'GET',
+        path: '/api/v1/healthz',
+        status: 200,
+        ms: 1,
+        soeid: undefined,
+      }),
+    );
+    expect(out).not.toContain('soeid');
+    expect(out).not.toContain('undefined');
+  });
+
+  it('puts nested and long data on indented lines with aligned colons, and ends with a blank line', () => {
+    const out = plain(
+      entry('success', 'server.listening', {
+        port: 8080,
+        cluster: 'https://x',
+        editors: { vscode: 'a', intellij: 'b' },
+        postgres: 'disabled',
+        empty: {},
+        list: [1, 2],
+        gone: undefined,
+      }),
+    );
+    expect(out).toBe(
+      [
+        `[2026-01-02 03:04:05] [Server] Workspace Manager is listening on port 8080.`,
+        `[2026-01-02 03:04:05] [Server]     port     : 8080`,
+        `[2026-01-02 03:04:05] [Server]     cluster  : https://x`,
+        `[2026-01-02 03:04:05] [Server]     editors:`,
+        `[2026-01-02 03:04:05] [Server]       vscode   : a`,
+        `[2026-01-02 03:04:05] [Server]       intellij : b`,
+        `[2026-01-02 03:04:05] [Server]     postgres : disabled`,
+        `[2026-01-02 03:04:05] [Server]     empty    : {}`,
+        `[2026-01-02 03:04:05] [Server]     list     : [1,2]`,
+      ].join('\n'),
+    );
+  });
+
+  it('switches to the indented layout for many fields, or a long value', () => {
+    const many = plain(entry('info', 'e', { a: 1, b: 2, c: 3, d: 4, e: 5, f: 6, g: 7 }));
+    expect(many.split('\n')[0]).toBe('[2026-01-02 03:04:05] [Application] | INFO  | e');
+    expect(many).toContain('    g : 7');
+
+    const long = plain(entry('error', 'e', { error: 'x'.repeat(100) }));
+    expect(long.split('\n')[0]).toBe(`${T} | ERROR | e`);
+    expect(long).toContain(`    error : ${'x'.repeat(100)}`);
+  });
+
+  it('an error with a request id and a message gets its own block, easy to read', () => {
+    const out = plain(
+      entry('error', 'request.failed', {
+        requestId: '7989eb27-2d84-4d15-aa0b-95003ff51f85',
+        code: 'UPSTREAM_ERROR',
+        error: 'Devfile registry catalog: No response received from server',
+      }),
+    );
+    expect(out).toBe(
+      [
+        `${T} | ERROR | request.failed`,
+        `${T}     requestId : 7989eb27-2d84-4d15-aa0b-95003ff51f85`,
+        `${T}     code      : UPSTREAM_ERROR`,
+        `${T}     error     : Devfile registry catalog: No response received from server`,
+        '',
+      ].join('\n'),
+    );
+  });
+
+  it('treats a "request" event without method/path/status as an ordinary entry', () => {
+    expect(plain(entry('info', 'request', { note: 'hi' }))).toBe(
+      `[2026-01-02 03:04:05] [HTTP] | INFO  | ${'request'.padEnd(30)} | note=hi`,
+    );
+  });
+});
+
+/tests/unit/utils/logger.test.ts
+import { describe, expect, it } from 'vitest';
+import { createLogger, redact } from '../../../src/utils/logger.js';
+
+function capture(level: Parameters<typeof createLogger>[0] = 'info') {
+  const lines: Record<string, unknown>[] = [];
+  return { lines, logger: createLogger(level, (l) => lines.push(JSON.parse(l))) };
+}
+
+describe('logger', () => {
+  it('records the calling file and function with a seconds-resolution timestamp', () => {
+    const { lines, logger } = capture();
+    function recordEvent() {
+      logger.info('source.test');
+    }
+    recordEvent();
+    expect(lines[0]).toMatchObject({ file: 'logger.test.ts', function: 'recordEvent' });
+    expect(lines[0]?.timestamp).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+  });
+  it('uses an error stack to identify its original file and function', () => {
+    const { lines, logger } = capture();
+    const error = new Error('creation failed');
+    error.stack =
+      'Error: creation failed\n    at NamespaceService.ensure (C:\\app\\src\\services\\NamespaceService.ts:42:10)';
+    logger.error('namespace.failed', { error });
+    expect(lines[0]).toMatchObject({
+      file: 'NamespaceService.ts',
+      function: 'NamespaceService.ensure',
+      error: 'creation failed',
+    });
+    expect(JSON.stringify(lines[0])).not.toContain('C:\\app');
+  });
+  it('writes one JSON line with level, event and fields', () => {
+    const { lines, logger } = capture();
+    logger.info('hello', { a: 1 });
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({ level: 'info', event: 'hello', a: 1 });
+    expect(typeof lines[0]?.time).toBe('string');
+  });
+
+  it('filters below the configured level', () => {
+    const { lines, logger } = capture('warn');
+    logger.debug('d');
+    logger.info('i');
+    logger.warn('w');
+    logger.error('e');
+    expect(lines.map((l) => l.event)).toEqual(['w', 'e']);
+  });
+
+  it('is silent when asked', () => {
+    const { lines, logger } = capture('silent');
+    logger.error('e');
+    expect(lines).toHaveLength(0);
+  });
+
+  it('child loggers carry bindings', () => {
+    const { lines, logger } = capture();
+    logger.child({ requestId: 'r1' }).info('x', { b: 2 });
+    expect(lines[0]).toMatchObject({ requestId: 'r1', b: 2 });
+  });
+
+  it('redacts sensitive keys, nested and in arrays', () => {
+    const { lines, logger } = capture();
+    logger.info('x', {
+      token: 'ghp_secret',
+      nested: { password: 'p', ok: 1 },
+      list: [{ authorization: 'Bearer x' }],
+    });
+    expect(lines[0]).toMatchObject({
+      token: '[redacted]',
+      nested: { password: '[redacted]', ok: 1 },
+      list: [{ authorization: '[redacted]' }],
+    });
+    expect(JSON.stringify(lines[0])).not.toContain('ghp_secret');
+  });
+
+  it('success is an info-level line marked as a success, and hidden when only warnings are wanted', () => {
+    const { lines, logger } = capture();
+    logger.success('workspace.created', { workspace: 'w1' });
+    expect(lines[0]).toMatchObject({
+      level: 'info',
+      outcome: 'success',
+      event: 'workspace.created',
+      workspace: 'w1',
+    });
+    const quiet = capture('warn');
+    quiet.logger.success('workspace.created');
+    expect(quiet.lines).toHaveLength(0);
+  });
+
+  it('plain info lines carry no outcome', () => {
+    const { lines, logger } = capture();
+    logger.info('x');
+    expect(lines[0]).not.toHaveProperty('outcome');
+  });
+
+  describe('pretty format (terminal)', () => {
+    const now = () => new Date(2026, 0, 2, 3, 4, 5, 678);
+    const pretty = (level: Parameters<typeof createLogger>[0] = 'info', color = true) => {
+      const out: string[] = [];
+      return {
+        out,
+        logger: createLogger(
+          level,
+          (l) => out.push(l),
+          {},
+          { format: 'pretty', color, now, source: { file: 'logger.test.ts', function: 'testLog' } },
+        ),
+      };
+    };
+
+    it('paints each kind in its colour: error red, warn orange, success green, info and debug white', () => {
+      const { out, logger } = pretty('debug');
+      logger.error('e');
+      logger.warn('w');
+      logger.success('s');
+      logger.info('i');
+      logger.debug('d');
+      expect(out).toEqual([
+        '\u001b[31m[2026-01-02 03:04:05] [logger.test.ts] [testLog] | ERROR | e\u001b[0m',
+        '\u001b[38;5;208m[2026-01-02 03:04:05] [logger.test.ts] [testLog] | WARN  | w\u001b[0m',
+        '\u001b[32m[2026-01-02 03:04:05] [Application] | OK    | s\u001b[0m',
+        '\u001b[97m[2026-01-02 03:04:05] [Application] | INFO  | i\u001b[0m',
+        '\u001b[97m[2026-01-02 03:04:05] [Application] | DEBUG | d\u001b[0m',
+      ]);
+    });
+
+    it('writes one sink call per entry, plain when colour is off', () => {
+      const { out, logger } = pretty('info', false);
+      logger.info('a', { n: 1 });
+      logger.warn('b');
+      expect(out).toEqual([
+        `[2026-01-02 03:04:05] [Application] | INFO  | ${'a'.padEnd(30)} | n=1`,
+        '[2026-01-02 03:04:05] [logger.test.ts] [testLog] | WARN  | b',
+      ]);
+    });
+
+    it('applies the level filter, bindings of child loggers, and redaction', () => {
+      const { out, logger } = pretty('info', false);
+      logger.debug('hidden');
+      logger.child({ requestId: 'r1' }).info('x', { token: 'ghp_secret', ok: 1 });
+      expect(out).toHaveLength(1);
+      expect(out[0]).toContain('requestId=r1');
+      expect(out[0]).toContain('token=[redacted]');
+      expect(out[0]).not.toContain('ghp_secret');
+    });
+
+    it('child loggers keep the format and colour of their parent', () => {
+      const { out, logger } = pretty('info', true);
+      logger.child({ a: 1 }).error('boom');
+      expect(out[0]?.startsWith('\u001b[31m')).toBe(true);
+    });
+
+    it('the default is still JSON, so existing log collectors keep working', () => {
+      const lines: string[] = [];
+      createLogger('info', (l) => lines.push(l)).info('x');
+      expect(JSON.parse(lines[0] as string)).toMatchObject({ event: 'x', level: 'info' });
+    });
+  });
+
+  it('serialises errors as name and message only', () => {
+    expect(redact(new Error('bad'))).toEqual({ name: 'Error', message: 'bad' });
+  });
+
+  it('stops redacting past a sane depth', () => {
+    const deep = { a: { b: { c: { d: { e: { f: { g: 1 } } } } } } };
+    expect(redact(deep)).toEqual(deep);
+  });
+});
+
+@@BINARY-SECTION
+@@FILE /.env.example
+IyAtLS0tIEhUVFAgLS0tLQ0KUE9SVD04MDgwDQpOT0RFX0VOVj1kZXZlbG9wbWVudA0KTE9HX0xF
+VkVMPWluZm8NCg0KIyAtLS0tIEF1dGggKFNFQ1JFVF9LRVkgaXMgUkVRVUlSRUQpIC0tLS0NClNF
+Q1JFVF9LRVk9Y2hhbmdlLW1lLXRvLWEtbG9uZy1yYW5kb20tc3RyaW5nLW9mLWF0LWxlYXN0LTE2
+LWNoYXJzDQpBRE1JTl9VU0VSTkFNRT1vcmlvbi1kZXZzcGFjZXMNCkFETUlOX1BBU1NXT1JEPWNo
+YW5nZS1tZQ0KSldUX0VYUElSRVNfSU49NjBkDQoNCiMgLS0tLSBBUEkgdmVyc2lvbmluZyAtLS0t
+DQojIEFsbCBlbmRwb2ludHMsIGluY2x1ZGluZyBoZWFsdGgvcmVhZGluZXNzIHByb2JlcywgYXJl
+IHNlcnZlZCBvbmx5IHVuZGVyIC9hcGkvdjEuDQoNCiMgRGFpbHkgcmVkYWN0ZWQgSlNPTiBsb2dz
+OyBtb3VudCBhIHdyaXRhYmxlIHZvbHVtZSBoZXJlIGluIHJlYWQtb25seSBjb250YWluZXJzLg0K
+TE9HX0RJUkVDVE9SWT1sb2dzDQoNCiMgLS0tLSBPcGVuU2hpZnQgY2x1c3RlcnMgLS0tLQ0KIyBE
+ZXYgU3BhY2VzIGNsdXN0ZXIuIFRoZSBiZWFyZXIgdG9rZW4gaXMgZm91bmQgYnkgTkFNRTogZGV2
+U3BhY2VzQ2x1c3RlclRva2VuPGlkPiwgd2hlcmUgPGlkPiBpcyB0aGUgZW5kIG9mIHRoZQ0KIyBj
+bHVzdGVyIG5hbWUgaW4gdGhlIFVSTCAobmFtY3RpZ3RkMDAxZCAtPiAwMDFkKS4gQSB0b2tlbiB3
+aG9zZSBpZCBiZWxvbmdzIHRvIGFub3RoZXIgY2x1c3RlciBpcyBpZ25vcmVkLg0KQ0xVU1RFUl9B
+UElfVVJMPWh0dHBzOi8vYXBpLm5hbWN0aWd0ZDAwMWQuZWNzLmR5bi5uc3Jvb3QubmV0OjY0NDMN
+CmRldlNwYWNlc0NsdXN0ZXJUb2tlbjAwMWQ9Y2hhbmdlLW1lDQojIEJ1aWxkL2RlcGxveSBwcm9q
+ZWN0cyBsaXZlIG9uIHRoaXMgY2x1c3RlcjsgbGVhdmUgaXQgdW5zZXQgKGFzIHRvZGF5KSB0byB1
+c2UgdGhlIERldiBTcGFjZXMgY2x1c3RlciBmb3IgdGhlbSB0b28uDQojIEl0cyB0b2tlbiBpcyBk
+ZXZPcHNUb2tlbjxpZD4gKG5hbWN0aXN3ZDAwNGQgLT4gMDA0ZCkuIFdpdGggaXQgdW5zZXQsIGRl
+dk9wc1Rva2VuMDA0ZCBiZWxvdyBpcyBOT1QgdXNlZC4NCiMgREVQTE9ZX0NMVVNURVJfQVBJX1VS
+TD1odHRwczovL2FwaS5uYW1jdGlzd2QwMDRkLmVjcy5keW4ubnNyb290Lm5ldDo2NDQzDQpkZXZP
+cHNUb2tlbjAwNGQ9Y2hhbmdlLW1lDQojIEV4cGxpY2l0IHRva2VucyAod2luIG92ZXIgdGhlIGJ5
+LW5hbWUgbG9va3VwKSBhbmQgYSBrdWJlY29uZmlnIGZpbGUgKGFsc28gdGhlIGZpcnN0IGNvbW1h
+bmQtbGluZSBhcmd1bWVudCk6DQojIENMVVNURVJfVE9LRU49DQojIERFUExPWV9DTFVTVEVSX1RP
+S0VOPQ0KIyBLVUJFQ09ORklHX1BBVEg9DQojIE5PREVfVExTX1JFSkVDVF9VTkFVVEhPUklaRUQ9
+MCB0dXJucyBjZXJ0aWZpY2F0ZSBjaGVja2luZyBPRkYgZm9yIHRoZSBjbHVzdGVycyBhbmQgZXZl
+cnkgb3RoZXIgSFRUUFMgcGVlcg0KIyAodGhlIHNlcnZpY2UgbG9ncyBhIHdhcm5pbmcgYXQgc3Rh
+cnR1cCkuIFByZWZlciBmaXhpbmcgdGhlIHRydXN0IHN0b3JlOyBrZWVwIGl0IG9ubHkgd2hlcmUg
+aXQgaXMgbmVlZGVkLg0KTk9ERV9UTFNfUkVKRUNUX1VOQVVUSE9SSVpFRD0wDQpERVBMT1lfUFJP
+SkVDVF9SRVFVRVNURVI9ZGV2c3BhY2VzLXN1cHBvcnQtdGVhbQ0KIyBEZXYgU3BhY2VzIGRhc2hi
+b2FyZCBhZGRyZXNzOyB3aGVuIHVuc2V0IGl0IGlzIGh0dHBzOi8vZGV2c3BhY2VzLmFwcHMuPGNs
+dXN0ZXIgZG9tYWluPiB0YWtlbiBmcm9tIENMVVNURVJfQVBJX1VSTC4NCiMgREVWX1NQQUNFU19T
+RVJWSUNFX0ZRRE49aHR0cHM6Ly9kZXZzcGFjZXMuYXBwcy5uYW1jdGlndGQwMDFkLmVjcy5keW4u
+bnNyb290Lm5ldA0KDQojIC0tLS0gRGV2ZmlsZSByZWdpc3RyeSAtLS0tDQpERVZSRUdfVVJMPWh0
+dHBzOi8vZGV2cmVnLXNlcnZpY2UtY3RpLXN2Y3MtZGV2ZmlsZS1yZWdpc3RyeS0xNzczOTguYXBw
+cy5uYW1jdGlndGQwMDFkLmVjcy5keW4ubnNyb290Lm5ldA0KIyBFZGl0b3JzIGFzIHRoZSBEZXYg
+U3BhY2VzIGRhc2hib2FyZCBrbm93cyB0aGVtOiB0aGUgZnVsbCBpZCBwdWJsaXNoZXIvbmFtZS92
+ZXJzaW9uLg0KRURJVE9SX1ZTQ09ERT1jaGUtaW5jdWJhdG9yL2NoZS1jb2RlL2xhdGVzdA0KIyBP
+cHRpb25hbCBpbnRlcm5hbCBwbHVnaW4gcmVnaXN0cnkgYmFzZSwgaW5jbHVkaW5nIC92My4gRGVm
+YXVsdHMgdG8gPERFVl9TUEFDRVNfU0VSVklDRV9GUUROPi9wbHVnaW4tcmVnaXN0cnkvdjMuDQoj
+IEVESVRPUl9SRUdJU1RSWV9VUkw9aHR0cDovL3lvdXItaW50ZXJuYWwtZWRpdG9yLXJlZ2lzdHJ5
+OjgwODAvdjMNCkVESVRPUl9JTlRFTExJSj1jaGUtaW5jdWJhdG9yL2NoZS1pZGVhLXNlcnZlci9s
+YXRlc3QNCiMgRURJVE9SX0dPTEFORD1jaGUtaW5jdWJhdG9yL2NoZS1nb2xhbmQvbGF0ZXN0DQoj
+IE91dGJvdW5kIHByb3h5IGluamVjdGVkIGludG8gdXNlciB3b3Jrc3BhY2VzIChlbXB0eSA9IGRv
+IG5vdCBpbmplY3QpDQpXT1JLU1BBQ0VfUFJPWFlfVVJMPQ0KDQojIC0tLS0gTGltaXRzIHBlciB1
+c2VyIC0tLS0NCk1BWF9SVU5OSU5HX1dPUktTUEFDRVM9Mw0KTUFYX1RPVEFMX1dPUktTUEFDRVM9
+NQ0KDQojIC0tLS0gUG9zdGdyZXM6IHRoZSBFWElTVElORyBPcmlvbiBtZXRyaWNzIGRhdGFiYXNl
+IC0tLS0NCiMgd29ya3NwYWNlLW1nciBvbmx5IElOU0VSVHMgcm93cyBpbnRvIHRoZSB0YWJsZSBi
+ZWxvdy4gSXQgbmV2ZXIgY3JlYXRlcywgYWx0ZXJzIG9yIGRyb3BzIGFueXRoaW5nOg0KIyB0aGUg
+ZGF0YWJhc2UsIHVzZXIgYW5kIHRhYmxlIG11c3QgYWxyZWFkeSBleGlzdC4gVGhlc2UgYXJlIHRo
+ZSBzYW1lIHZhcmlhYmxlIG5hbWVzIGFzIGJlZm9yZTsgd2l0aA0KIyBgZXhwb3J0IFg9Jy4uLidg
+IHRoZSBxdW90ZXMgYXJlIHJlbW92ZWQgYnkgdGhlIHNoZWxsLCBhbmQgcXVvdGVzIGxlZnQgaW4g
+YSAuZW52IGZpbGUgYXJlIHJlbW92ZWQgaGVyZSB0b28uDQpQT1NUR1JFU19EQVRBQkFTRT1vcmlv
+bl9kZXZfbWV0YWRhdGENClBPU1RHUkVTX0hPU1ROQU1FPU5BT1JJMDFEUFNfSU5TVEFOQ0UxLnBn
+YWFzLmR5bi5uc3Jvb3QubmV0DQpQT1NUR1JFU19QQVNTV09SRD1jaGFuZ2UtbWUNClBPU1RHUkVT
+X1BPUlQ9MTUyNA0KUE9TVEdSRVNfVVNFUj1hcHBfb3Jpb25fcGdzcWxfZGV2DQpQT1NUR1JFU19E
+QVRBQkFTRV9UQUJMRU5BTUU9bWV0cmljcy4iZGV2c3BhY2VzLW1ldHJpY3MtZGV2Ig0KIyBOT0RF
+X0VOViAoc2V0IGFib3ZlKSBjaG9vc2VzIHRoZSBDQSBjZXJ0aWZpY2F0ZSwgZXhhY3RseSBhcyB0
+aGUgb3JpZ2luYWwgc2VydmljZSBkaWQ6DQojICAgZGV2ZWxvcG1lbnQgLT4gLi9jZXJ0cy9kZXYu
+cGVtICAgKGhvc3RuYW1lIGNoZWNrIHJlbGF4ZWQsIGNlcnRpZmljYXRlIHN0aWxsIHZlcmlmaWVk
+KQ0KIyAgIHVhdCAgICAgICAgIC0+IC9hcHAvYmFja2VuZC9jZXJ0L3VhdC5wZW0NCiMgICBwcm9k
+dWN0aW9uICAtPiAvYXBwL2JhY2tlbmQvY2VydC9wcm9kLnBlbQ0KIyBPcHRpb25hbCBvdmVycmlk
+ZXM6DQojIFBPU1RHUkVTX0NFUlRfRElSPS9zb21lL2RpciAgICAgICAgICAoZGlyZWN0b3J5IGhv
+bGRpbmcgZGV2LnBlbSAvIHVhdC5wZW0gLyBwcm9kLnBlbSkNCiMgUE9TVEdSRVNfQ0FfRklMRT0v
+c29tZS9kaXIvY2EucGVtICAgIChvbmUgc3BlY2lmaWMgQ0EgZmlsZTsgd2lucyBvdmVyIHRoZSBh
+Ym92ZSkNCiMgUE9TVEdSRVNfU1NMPWZhbHNlICAgICAgICAgICAgICAgICAgIChUTFMgaXMgT04g
+YnkgZGVmYXVsdDsgb25seSB0dXJuIGl0IG9mZiBmb3IgYSBsb2NhbCB0ZXN0IGRhdGFiYXNlKQ0K
+IyBQT1NUR1JFU19FTkFCTEVEPWZhbHNlICAgICAgICAgICAgICAgKGRvIG5vdCB3cml0ZSBtZXRy
+aWNzIGF0IGFsbCwgZS5nLiB3aGVuIHJ1bm5pbmcgd2l0aG91dCBhIGRhdGFiYXNlKQ0KDQojIC0t
+LS0gTm90aWZpY2F0aW9ucyAob3B0aW9uYWwpIC0tLS0NCk5PVElGSUNBVElPTl9NQUlMX1VSTD0N
+Ck5PVElGSUNBVElPTl9FTUFJTF9VU0VSTkFNRT0NCk5PVElGSUNBVElPTl9FTUFJTF9QQVNTV09S
+RD0NCk5PVElGSUNBVElPTl9TRU5ERVI9bm9yZXBseUBleGFtcGxlLmNvbQ0KTk9USUZJQ0FUSU9O
+X0NDPQ0KRU1BSUxfRE9NQUlOPWV4YW1wbGUuY29tDQpVU0VSX0RJUkVDVE9SWV9HUkFQSFFMX1VS
+TD0NCg0KIyAtLS0tIEdpdEh1YiBwZXJzb25hbCBhY2Nlc3MgdG9rZW5zIHN0b3JlZCBmb3IgRGV2
+IFNwYWNlcyAtLS0tDQpHSVRIVUJfVVJMPWh0dHBzOi8vZ2l0aHViLmNvbQ0KIyBBcHBlbmRlZCB0
+byB0aGUgc29laWQgdG8gZm9ybSB0aGUgZ2l0IHVzZXJuYW1lLCBlLmcuIF9jaXRpIOKGkiBwcDU4
+Mzg2X2NpdGkgKGVtcHR5ID0gc29laWQgb25seSkNCkdJVEhVQl9VU0VSX1NVRkZJWD0NCg==
+@@END
 @@CHECKSUMS
-15e4712b95700b12584f1337ebd25b00a205b68e2e7d21dd63d64b640414234e  /README.md
-0eb648f57422ed727a7aa805af0d01d4b478b0361921ad9a7f7831d892119596  /docs/API.md
-5f91312c1778a3cc2cdf4465256791c7fe37850107ead17f7947e6f6e0c736d1  /src/app.ts
-87d843651a6dd6f2b504eb61192a3adcba4c93b1409e31400f2ae638ff253295  /src/factories/workspace-factory.ts
-ee436503512a6f94a28a23220d57375f020e7ee92879dfa475c9b9316e647ac6  /src/factories/workspace-setup.ts
-729e047c9006c02468ee0798d70ac052ce26d8ff82048b6e1c8a8f3904fed2fd  /src/http/errors.ts
-f5e40068a44aeff26aafa89659e31d4e352abfe7af6521dafa177ac951650b93  /src/http/schemas.ts
-d87f0fa8bc25e73b5ce45661ffd9ecf2ca8b2f4c0aec891a2689ec3b677a759b  /src/services/WorkspaceService.ts
-1e938e747865de5f3ed5d445a29633c6bd63ce94c6a3f4442be567b9edbcd99d  /src/utils/errors.ts
-eff0a4a89a0bc105bd2bf29234515e34fdaaba381f7da37d0981e5a092190382  /tests/e2e/journeys.test.ts
-f3e8770600a1b11bb4daa7dfa808ea9c166d21d01b53aa0fef632e9b2e7fb00b  /tests/integration/deploy-cluster.test.ts
-629829f53bd66f2df9dcd89c44c0c24f9e138933ac14624254492af39a16b611  /tests/integration/request-logging.test.ts
-fe2632e7ab43f06774a07fd4a95cddbd790807c814636b72bbc325ea6485fc4f  /tests/integration/workspace-create-contract.test.ts
-4554e33614c207bfd2def7280d0d9e8fd8609735aac3f1403f5e1b48ef858f49  /tests/integration/workspace-setup.test.ts
-f10761ea1e55ea80d5b04c9cf6443f67eb1aa14f1c757d84bad07b360c406295  /tests/integration/workspaces.test.ts
-1d42fa77b055eaaeb451575bc1c675897775ddeab23b7384e36f8f9be9d3791c  /tests/unit/factories/workspace-factory.test.ts
-b0ab463e597c647e7ab2e14870c2986d0571a94035beabbd7b9145b149c1058f  /tests/unit/http/errors-schemas.test.ts
+7cf0a1007096e2b3940a168a8025b118614ef6c860b8e99ae8099ab885961b12  /.env.example
+178f10d97f65feea4bdff986bb454d74be6f575112434f6bf565176f91aec081  /docs/API.md
+c903290d7558b13305e1acb280d8309c39ae0c55497d527cc8f3603427435cfb  /src/config/env.ts
+db6ec984e06dd27e917bfd44d3bfb55ce7ca25f5f122b53d63ac3c2fcfca298a  /src/container.ts
+794da9913c883f1d11853d84c60a7274803935d7e1730e35abe1ee858d2f7e40  /src/factories/workspace-factory.ts
+8dae5a957d63c1b9297b2e23147cea28c6b767ab9e141576d57d81d21ffcb9d5  /src/services/WorkspaceService.ts
+5a40db8b9ba65a5d794c0e74736983cb2ef3301f42d500ed46cdb8e6f3cc263e  /src/utils/log-format.ts
+6d2dae602107220126a40343c22244fecbea36bf829c6db884def188c6103294  /src/utils/log-message.ts
+040c66ea85566e159c5383f11dafe5c301a0f2d47cdc4a0f4097e499905cd6e1  /tests/integration/request-logging.test.ts
+d2af981a06a1d525bf4525147c4cd2731c712df02902514d5be12b7d16a1221a  /tests/unit/factories/workspace-factory.test.ts
+a578240bce8ff479f1f0c4b3a84acf7ba4e3bde9c8e7ef9c042e48d5731adad8  /tests/unit/utils/log-format.test.ts
+f4921a5e0ff22a4bbbdd4d05a1e17603a2e0697d401fddb78ea80fa84d9b06d3  /tests/unit/utils/logger.test.ts

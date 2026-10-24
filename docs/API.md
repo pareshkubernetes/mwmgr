@@ -115,6 +115,31 @@ Failed API requests have a `request.failed` log containing the error's source an
 message. Their `request` summary uses that same source, rather than the response
 listener in `app.ts`. Successful request summaries identify the access-log function.
 
+## Editor definition access
+
+The DevWorkspace operator fetches the IDE contribution independently of the API
+server. It needs a reachable editor devfile URL, not a browser-authenticated
+dashboard API URL. New workspaces use:
+
+```text
+<DEV_SPACES_SERVICE_FQDN>/plugin-registry/v3/plugins/<editor-id>/devfile.yaml
+```
+
+Set `EDITOR_REGISTRY_URL` to your actual internal plugin registry base, including
+`/v3`, when it differs from this default. The startup summary prints the selected
+registry. This is separate from `DEVREG_URL`, which supplies workspace stacks.
+The selected registry must be reachable from the DevWorkspace operator's cluster;
+Workspace Manager's token is not attached to the stored URL.
+
+An HTTP 403 while resolving `ide` means the editor request was denied. Updating
+the app fixes URLs for newly created workspaces; existing failed DevWorkspace
+resources retain their stored contribution until updated or recreated. The API's
+creation response confirms the resource exists, not that the operator has fetched
+the editor or started the workspace successfully.
+
+The registry URI form follows the DevWorkspace example in the
+[Red Hat Dev Spaces user guide](https://docs.redhat.com/en/documentation/red_hat_openshift_dev_spaces/3.8/pdf/user_guide/Red_Hat_OpenShift_Dev_Spaces-3.8-User_guide-en-US.pdf).
+
 ## Repairing or updating Kubernetes resources
 
 Restore existing defaults on a user's workspace project:
@@ -198,9 +223,13 @@ are supported. Stored secret values are never returned by this API.
 Production writes one redacted JSON entry per line to `logs/app-YYYY-MM-DD.log`.
 Each entry includes `timestamp` (`YYYY-MM-DD HH:MM:SS` in the process's local timezone),
 `file`, and `function`. The ISO `time` field remains available for precise filtering.
-Readable console and log-search output uses
-`[timestamp] [filename:line] [functionName]`. Continuation lines carry the
-same prefix. Source details come from the log call, or the original error stack when
+Successful and informational console/log-search output uses
+`[timestamp] [Workspace] Created workspace resource ...` and similar category-based
+sentences. Source locations are omitted from routine messages. Warnings and errors
+use `[timestamp] [filename:line] [functionName]` with the error message, status and
+correlation details. Continuation lines carry the same prefix. Structured JSON files
+retain event names, fields and source metadata for every severity. Source details
+come from the log call, or the original error stack when
 an Error object is provided. Application callbacks have descriptive function names;
 top-level execution without a named function is identified as `module`.
 Client failures (400/401/403/404/409) are logged as warnings with status, error code,

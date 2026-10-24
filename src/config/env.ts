@@ -34,6 +34,7 @@ const schema = z.object({
   DEV_SPACES_SERVICE_FQDN: z.string().optional(),
 
   DEVREG_URL: z.string().min(1, 'DEVREG_URL is required'),
+  EDITOR_REGISTRY_URL: z.url({ protocol: /^https?$/ }).optional(),
   // Editor ids as the Dev Spaces dashboard knows them, e.g. che-incubator/che-code/latest (a bare name such as
   // `che-code` is accepted and expanded).
   EDITOR_VSCODE: z.string().default('che-incubator/che-code/latest'),
@@ -160,6 +161,7 @@ export interface AppConfig {
   };
   devreg: {
     url: string;
+    editorRegistryUrl?: string;
     editors: { vscode: string; intellij: string; goland: string };
     workspaceProxyUrl?: string;
   };
@@ -212,6 +214,8 @@ export function startupSummary(c: AppConfig): Record<string, unknown> {
         : auth(c.cluster.deployTokenVar, c.cluster.kubeconfigPath),
     devSpacesFqdn: c.cluster.devSpacesServiceFqdn,
     devfileRegistry: c.devreg.url,
+    editorRegistry:
+      c.devreg.editorRegistryUrl ?? `${c.cluster.devSpacesServiceFqdn.replace(/\/$/, '')}/plugin-registry/v3`,
     editors: c.devreg.editors,
     clusterTls: c.cluster.tlsRejectUnauthorized
       ? 'certificates verified'
@@ -291,6 +295,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     },
     devreg: {
       url: e.DEVREG_URL,
+      editorRegistryUrl: e.EDITOR_REGISTRY_URL,
       editors: {
         vscode: normalizeEditorId(e.EDITOR_VSCODE),
         intellij: normalizeEditorId(e.EDITOR_INTELLIJ),

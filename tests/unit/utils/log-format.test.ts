@@ -56,18 +56,39 @@ describe('colours: errors red, warnings orange, successes green, everything else
 });
 
 describe('layout', () => {
+  it('describes successful workspace creation in English without source-location noise', () => {
+    const output = plain(
+      entry('success', 'workspace.created', {
+        workspace: 'optimus-1234',
+        soeid: 'pp1',
+        namespace: 'pp1-devspaces-1',
+        version: '8.1.1',
+        editor: 'che-code',
+        file: 'WorkspaceService.ts',
+        function: 'create',
+        line: 160,
+      }),
+    );
+    expect(output).toContain(
+      "[Workspace] Created workspace resource 'optimus-1234' for user 'pp1' in namespace 'pp1-devspaces-1'",
+    );
+    expect(output).toContain('version: 8.1.1, editor: che-code');
+    expect(output).not.toMatch(/WorkspaceService\.ts|workspace\.created|\[create\]/);
+  });
   it('formats local time as YYYY-MM-DD HH:mm:ss', () => {
     expect(formatLocalTime(time)).toBe('2026-01-02 03:04:05');
     expect(formatLocalTime(new Date(2026, 10, 9, 23, 59, 1, 5))).toBe('2026-11-09 23:59:01');
   });
 
   it('a bare event is one line: time | LEVEL | event', () => {
-    expect(plain(entry('info', 'server.shutdown'))).toBe(`${T} | INFO  | server.shutdown`);
+    expect(plain(entry('info', 'server.shutdown'))).toBe(
+      '[2026-01-02 03:04:05] [Server] Shutting down Workspace Manager.',
+    );
   });
 
   it('level badges all have the same width so the columns line up', () => {
-    const widths = (['error', 'warn', 'success', 'info', 'debug'] as const).map((k) =>
-      plain(entry(k, 'e')).indexOf(' | e'),
+    const widths = (['error', 'warn', 'success', 'info', 'debug'] as const).map(
+      (k) => plain(entry(k, 'e')).split('|')[1]?.length,
     );
     expect(new Set(widths).size).toBe(1);
     expect(plain(entry('error', 'e'))).toContain('| ERROR |');
@@ -105,7 +126,7 @@ describe('layout', () => {
       }),
     );
     expect(out).toBe(
-      `${T} | OK    | ${'request'.padEnd(30)} | GET    /api/v1/pp1/workspaces -> 200 (12 ms)  requestId=r-1  soeid=pp1`,
+      "[2026-01-02 03:04:05] [HTTP] GET /api/v1/pp1/workspaces completed successfully for user 'pp1' (HTTP 200, 12 ms). Request ID: r-1.",
     );
   });
 
@@ -137,23 +158,22 @@ describe('layout', () => {
     );
     expect(out).toBe(
       [
-        `${T} | OK    | server.listening`,
-        `${T}     port     : 8080`,
-        `${T}     cluster  : https://x`,
-        `${T}     editors:`,
-        `${T}       vscode   : a`,
-        `${T}       intellij : b`,
-        `${T}     postgres : disabled`,
-        `${T}     empty    : {}`,
-        `${T}     list     : [1,2]`,
-        '',
+        `[2026-01-02 03:04:05] [Server] Workspace Manager is listening on port 8080.`,
+        `[2026-01-02 03:04:05] [Server]     port     : 8080`,
+        `[2026-01-02 03:04:05] [Server]     cluster  : https://x`,
+        `[2026-01-02 03:04:05] [Server]     editors:`,
+        `[2026-01-02 03:04:05] [Server]       vscode   : a`,
+        `[2026-01-02 03:04:05] [Server]       intellij : b`,
+        `[2026-01-02 03:04:05] [Server]     postgres : disabled`,
+        `[2026-01-02 03:04:05] [Server]     empty    : {}`,
+        `[2026-01-02 03:04:05] [Server]     list     : [1,2]`,
       ].join('\n'),
     );
   });
 
   it('switches to the indented layout for many fields, or a long value', () => {
     const many = plain(entry('info', 'e', { a: 1, b: 2, c: 3, d: 4, e: 5, f: 6, g: 7 }));
-    expect(many.split('\n')[0]).toBe(`${T} | INFO  | e`);
+    expect(many.split('\n')[0]).toBe('[2026-01-02 03:04:05] [Application] | INFO  | e');
     expect(many).toContain('    g : 7');
 
     const long = plain(entry('error', 'e', { error: 'x'.repeat(100) }));
@@ -182,7 +202,7 @@ describe('layout', () => {
 
   it('treats a "request" event without method/path/status as an ordinary entry', () => {
     expect(plain(entry('info', 'request', { note: 'hi' }))).toBe(
-      `${T} | INFO  | ${'request'.padEnd(30)} | note=hi`,
+      `[2026-01-02 03:04:05] [HTTP] | INFO  | ${'request'.padEnd(30)} | note=hi`,
     );
   });
 });

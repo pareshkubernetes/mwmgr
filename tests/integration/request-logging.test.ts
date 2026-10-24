@@ -18,7 +18,8 @@ beforeEach(() => {
   raw.length = 0;
 });
 
-const findRequest = (path: string) => raw.find((l) => l.includes('| request ') && l.includes(path));
+const findRequest = (path: string) =>
+  raw.find((l) => (l.includes('| request ') || l.includes('[HTTP]')) && l.includes(path));
 /** The line is written when the response has been sent, which can be a moment after the client has it. */
 async function requestLine(path: string): Promise<string | undefined> {
   for (let i = 0; i < 50 && !findRequest(path); i++) await new Promise((r) => setTimeout(r, 10));
@@ -71,7 +72,7 @@ describe('what the terminal shows for each API call', () => {
     const line = await requestLine('/api/v1/healthz');
     expect(line?.startsWith(COLORS.success)).toBe(true);
     expect(strip(line as string)).toMatch(
-      /\| OK {4}\| request +\| GET +\/api\/v1\/healthz -> 200 \(\d+ ms\) {2}requestId=[0-9a-f-]{36}$/,
+      /\[HTTP\] GET \/api\/v1\/healthz completed successfully \(HTTP 200, \d+ ms\)\. Request ID: [0-9a-f-]{36}\.$/,
     );
   });
 
@@ -82,9 +83,11 @@ describe('what the terminal shows for each API call', () => {
       .post('/api/v1/login')
       .send({ username: 'orion-admin', password: 'correct horse battery staple' });
     expect(strip((await requestLine('/api/v1/pp1/projects')) as string)).toContain(
-      'GET    /api/v1/pp1/projects -> 200',
+      'GET /api/v1/pp1/projects completed successfully',
     );
-    expect(strip((await requestLine('/api/v1/login')) as string)).toContain('POST   /api/v1/login -> 200');
+    expect(strip((await requestLine('/api/v1/login')) as string)).toContain(
+      'POST /api/v1/login completed successfully',
+    );
     // the query string is not part of the logged path
     expect(raw.join('\n')).not.toContain('csiid=1001 ->');
     expect(raw.join('\n')).not.toContain('?csiid');
@@ -119,10 +122,10 @@ describe('what the terminal shows for each API call', () => {
       .send({ editor: 'vscode', stackVersion: '2.0.0', devworkspaceValue: 'java-maven', csiid: '1001' });
     expect(res.status).toBe(200);
     expect((await requestLine('/api/v1/pp1/workspaces'))?.startsWith(COLORS.success)).toBe(true);
-    const created = raw.find((l) => l.includes('workspace.created'));
+    const created = raw.find((l) => l.includes('Created workspace resource'));
     expect(created?.startsWith(COLORS.success)).toBe(true);
     expect(strip(created as string)).toMatch(
-      /\| OK {4}\| workspace\.created +\| soeid=pp1 {2}namespace=pp1-devspaces-1001 {2}workspace=java-maven-[0-9a-f]{4}$/,
+      /\[Workspace\] Created workspace resource 'java-maven-[0-9a-f]{4}' for user 'pp1' in namespace 'pp1-devspaces-1001'/,
     );
   });
 
@@ -134,10 +137,12 @@ describe('what the terminal shows for each API call', () => {
     t.fakes.kube.setPhase('pp1-devspaces-1001', id, 'Running');
     raw.length = 0;
     await t.api('post', `/api/v1/pp1/workspaces/${id}/stop`);
-    expect(raw.find((l) => l.includes('workspace.stopped'))?.startsWith(COLORS.success)).toBe(true);
+    expect(raw.find((l) => l.includes('Requested stop of workspace'))?.startsWith(COLORS.success)).toBe(true);
     t.fakes.kube.setPhase('pp1-devspaces-1001', id, 'Stopped');
     await t.api('post', `/api/v1/pp1/workspaces/${id}/start`);
-    expect(raw.find((l) => l.includes('workspace.started'))?.startsWith(COLORS.success)).toBe(true);
+    expect(raw.find((l) => l.includes('Requested startup of workspace'))?.startsWith(COLORS.success)).toBe(
+      true,
+    );
   });
 
   it('never prints a secret, and every entry stays readable text', async () => {
