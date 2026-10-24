@@ -93,7 +93,7 @@ export function createProductionDependencies(config: AppConfig, logger: Logger):
   return {
     kube: new KubeClient(loadKubeConfig(config.cluster.kubeconfigPath)),
     metrics: config.postgres.enabled
-      ? new MetricsRepository(createPgPool(config.postgres), config.postgres.table)
+      ? new MetricsRepository(createPgPool(config.postgres, logger), config.postgres.table, logger)
       : new NoopMetricsStore(),
     registry: new DevfileRegistryClient(createRegistryHttp(config.devreg.url)),
     notifier: config.notification.url

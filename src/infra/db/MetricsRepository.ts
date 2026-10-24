@@ -1,8 +1,10 @@
-import { readFileSync } from 'node:fs';
 import pg from 'pg';
 import type { AppConfig } from '../../config/env.js';
 import type { MetricsRecord } from '../../domain/types.js';
+import { errorMessage } from '../../utils/errors.js';
+import { silentLogger, type Logger } from '../../utils/logger.js';
 import type { MetricsStore } from '../ports.js';
+import { buildSslOptions } from './pg-ssl.js';
 
 /** The subset of `pg.Pool` the repository needs (also satisfied by pg-mem's pool in tests). */
 export interface Queryable {
@@ -17,56 +19,121 @@ export function assertSafeTableName(table: string): string {
   return table;
 }
 
-export function createPgPool(config: AppConfig['postgres']): pg.Pool {
-  return new pg.Pool({
+/** `metrics."devspaces-metrics-dev"` → `{ schema: 'metrics', name: 'devspaces-metrics-dev' }`. */
+export function parseTableName(table: string): { schema?: string; name: string } {
+  const unq = (s: string): string => s.replace(/^"|"$/g, '');
+  const parts = assertSafeTableName(table).match(/"[\w-]+"|[A-Za-z_]\w*/g) ?? [];
+  const name = unq(parts[parts.length - 1] ?? '');
+  return parts.length > 1 ? { schema: unq(parts[0] ?? ''), name } : { name };
+}
+
+export function createPgPool(config: AppConfig['postgres'], logger: Logger = silentLogger): pg.Pool {
+  const pool = new pg.Pool({
     host: config.host,
     port: config.port,
     database: config.database,
     user: config.user,
     password: config.password,
-    ssl: config.ssl ? { rejectUnauthorized: true, ca: readFileSync(config.caFile ?? '', 'utf8') } : false,
+    ssl: buildSslOptions(config),
     max: 5,
     connectionTimeoutMillis: 3000,
     idleTimeoutMillis: 30_000,
     statement_timeout: 5000,
   });
+  // An idle client dropped by the server emits 'error'; unhandled, it would crash the process.
+  pool.on('error', (error) => logger.error('postgres.pool_error', { error: errorMessage(error) }));
+  return pool;
 }
 
+/** UTC wall-clock text (`2026-01-02 03:04:05.678`), the format the original service wrote. */
+export const formatUtc = (date: Date): string => date.toISOString().replace('T', ' ').replace('Z', '');
+
+/** Every value the service can store, keyed by column name. */
+export function candidateColumns(r: MetricsRecord): Record<string, unknown> {
+  return {
+    timestamp: formatUtc(r.timestamp),
+    csiid: r.csiid,
+    soeid: r.soeid,
+    eventtype: r.eventtype,
+    resourcename: r.resourcename,
+    resourcetype: r.resourcetype,
+    status: JSON.stringify(r.status),
+    limitcpu: r.limitcpu,
+    limitmemory: r.limitmemory,
+    requestcpu: r.requestcpu,
+    requestmemory: r.requestmemory,
+    duration: r.duration,
+    storage: r.storage,
+    useraction: r.useraction,
+    workspaceversion: r.workspaceversion,
+    editorname: r.editorname,
+    errordetail: r.status.failed ? r.status.error : null,
+  };
+}
+
+/**
+ * Writes metrics rows into an EXISTING table. It never issues DDL (no CREATE/ALTER/DROP): it reads the table's
+ * column list once and inserts only the columns that exist, so a table that predates some of our fields still works.
+ */
 export class MetricsRepository implements MetricsStore {
   private readonly table: string;
+  private columns?: Promise<Set<string> | undefined>;
+  private warnedMissing = false;
 
   constructor(
     private readonly db: Queryable,
     table = 'metrics."devspaces-metrics"',
+    private readonly logger: Logger = silentLogger,
   ) {
     this.table = assertSafeTableName(table);
   }
 
-  async insert(r: MetricsRecord): Promise<void> {
+  private knownColumns(): Promise<Set<string> | undefined> {
+    this.columns ??= this.discoverColumns();
+    return this.columns;
+  }
+
+  private async discoverColumns(): Promise<Set<string> | undefined> {
+    const { schema, name } = parseTableName(this.table);
+    try {
+      const result = (await this.db.query(
+        `SELECT column_name FROM information_schema.columns
+          WHERE table_name = $1 AND table_schema = COALESCE($2, current_schema())`,
+        [name, schema ?? null],
+      )) as { rows?: { column_name: string }[] };
+      const names = (result.rows ?? []).map((row) => row.column_name.toLowerCase());
+      if (names.length > 0) return new Set(names);
+      this.logger.warn('metrics.columns_unknown', {
+        table: this.table,
+        reason: 'no columns visible (table missing or no access to information_schema); inserting all fields',
+      });
+    } catch (error) {
+      this.logger.warn('metrics.columns_discovery_failed', { table: this.table, error: errorMessage(error) });
+      // Do not cache a failure: try again on the next insert.
+      this.columns = undefined;
+    }
+    return undefined;
+  }
+
+  async insert(record: MetricsRecord): Promise<void> {
+    const all = candidateColumns(record);
+    const known = await this.knownColumns();
+    const names = known ? Object.keys(all).filter((column) => known.has(column)) : Object.keys(all);
+
+    if (known && !this.warnedMissing) {
+      const missing = Object.keys(all).filter((column) => !known.has(column));
+      if (missing.length > 0) {
+        this.warnedMissing = true;
+        this.logger.warn('metrics.columns_missing', { table: this.table, missing: missing.join(',') });
+      }
+    }
+    if (names.length === 0) throw new Error(`Table ${this.table} has none of the expected metrics columns`);
+
+    const columns = names.map((column) => `"${column}"`).join(', ');
+    const placeholders = names.map((_, i) => `$${i + 1}`).join(', ');
     await this.db.query(
-      `INSERT INTO ${this.table}
-        ("timestamp", csiid, soeid, eventtype, resourcename, resourcetype, status,
-         limitcpu, limitmemory, requestcpu, requestmemory, duration, storage,
-         useraction, workspaceversion, editorname)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
-      [
-        r.timestamp,
-        r.csiid,
-        r.soeid,
-        r.eventtype,
-        r.resourcename,
-        r.resourcetype,
-        JSON.stringify(r.status),
-        r.limitcpu,
-        r.limitmemory,
-        r.requestcpu,
-        r.requestmemory,
-        r.duration,
-        r.storage,
-        r.useraction,
-        r.workspaceversion,
-        r.editorname,
-      ],
+      `INSERT INTO ${this.table} (${columns}) VALUES (${placeholders})`,
+      names.map((column) => all[column]),
     );
   }
 

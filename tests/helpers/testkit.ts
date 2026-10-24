@@ -98,10 +98,7 @@ export async function makePgMemRepository(): Promise<{
   query: (sql: string) => Promise<Record<string, unknown>[]>;
 }> {
   const db = newDb();
-  const migration = readFileSync(
-    fileURLToPath(new URL('../../migrations/001_devspaces_metrics.sql', import.meta.url)),
-    'utf8',
-  );
+  const migration = readFileSync(fileURLToPath(new URL('./metrics-table.sql', import.meta.url)), 'utf8');
   db.public.none(migration);
   const { Pool } = db.adapters.createPg();
   const pool = new Pool();

@@ -1,3 +1,6 @@
+-- TEST FIXTURE ONLY. The real metrics table already exists in the Orion Postgres database and is owned by
+-- its DBA: workspace-mgr never creates or alters tables. This file only gives the in-memory test database
+-- (pg-mem) a table of the same shape. Not shipped, not run by the application.
 -- Metrics table written by workspace-mgr (one row per action, success or failure).
 CREATE SCHEMA IF NOT EXISTS metrics;
 
@@ -18,7 +21,8 @@ CREATE TABLE IF NOT EXISTS metrics."devspaces-metrics" (
   storage          NUMERIC(12, 3) NOT NULL DEFAULT 0,
   useraction       VARCHAR(32)  NOT NULL DEFAULT 'user',  -- user | system
   workspaceversion VARCHAR(64)  NOT NULL DEFAULT '',
-  editorname       VARCHAR(64)  NOT NULL DEFAULT ''
+  editorname       VARCHAR(64)  NOT NULL DEFAULT '',
+  errordetail      TEXT
 );
 
 CREATE INDEX IF NOT EXISTS devspaces_metrics_ts_idx   ON metrics."devspaces-metrics" ("timestamp");

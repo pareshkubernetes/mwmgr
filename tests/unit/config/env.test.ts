@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { loadConfig } from '../../../src/config/env.js';
+import { loadConfig, unquote } from '../../../src/config/env.js';
 
 const base = {
   SECRET_KEY: 'a-sufficiently-long-secret',
@@ -54,16 +54,70 @@ describe('loadConfig', () => {
     expect(ok.postgres).toMatchObject({ enabled: true, database: 'd', user: 'u', port: 5432, ssl: false });
   });
 
-  it('requires a CA file when Postgres SSL is on', () => {
-    const env = {
-      ...base,
-      POSTGRES_ENABLED: 'true',
-      POSTGRES_DATABASE: 'd',
-      POSTGRES_USER: 'u',
-      POSTGRES_SSL: 'true',
+  it('uses TLS to Postgres by default, as the original service always did', () => {
+    const env = { ...base, POSTGRES_ENABLED: 'true', POSTGRES_DATABASE: 'd', POSTGRES_USER: 'u' };
+    expect(loadConfig(env).postgres).toMatchObject({ ssl: true, env: 'development', caFile: undefined });
+    expect(loadConfig({ ...env, POSTGRES_SSL: 'false' }).postgres.ssl).toBe(false);
+    expect(loadConfig({ ...env, NODE_ENV: 'production' }).postgres.env).toBe('production');
+  });
+
+  it('accepts explicit CA overrides', () => {
+    const env = { ...base, POSTGRES_ENABLED: 'true', POSTGRES_DATABASE: 'd', POSTGRES_USER: 'u' };
+    const pg = loadConfig({ ...env, POSTGRES_CA_FILE: '/ca.pem', POSTGRES_CERT_DIR: '/certs' }).postgres;
+    expect(pg).toMatchObject({ caFile: '/ca.pem', certDir: '/certs' });
+  });
+
+  describe('the existing Orion database environment', () => {
+    // Exactly what the team exports (quotes included, as they appear when pasted from the notes file).
+    const exported = {
+      POSTGRES_DATABASE: 'orion_dev_metadata',
+      POSTGRES_HOSTNAME: 'NAORI01DPS_INSTANCE1.pgaas.dyn.nsroot.net',
+      POSTGRES_PASSWORD: 'secret',
+      POSTGRES_PORT: "'1524'",
+      POSTGRES_USER: 'app_orion_pgsql_dev',
+      POSTGRES_DATABASE_TABLENAME: `'metrics."devspaces-metrics-dev"'`,
+      NODE_ENV: 'development',
     };
-    expect(() => loadConfig(env)).toThrow(/POSTGRES_CA_FILE/);
-    expect(loadConfig({ ...env, POSTGRES_CA_FILE: '/ca.pem' }).postgres.caFile).toBe('/ca.pem');
+
+    it('is understood as-is, with or without the shell quotes', () => {
+      for (const env of [
+        exported,
+        {
+          ...exported,
+          POSTGRES_PORT: '1524',
+          POSTGRES_DATABASE_TABLENAME: 'metrics."devspaces-metrics-dev"',
+        },
+      ]) {
+        expect(loadConfig({ ...base, POSTGRES_ENABLED: 'true', ...env }).postgres).toEqual({
+          enabled: true,
+          host: 'NAORI01DPS_INSTANCE1.pgaas.dyn.nsroot.net',
+          port: 1524,
+          database: 'orion_dev_metadata',
+          user: 'app_orion_pgsql_dev',
+          password: 'secret',
+          ssl: true,
+          caFile: undefined,
+          certDir: undefined,
+          env: 'development',
+          table: 'metrics."devspaces-metrics-dev"',
+        });
+      }
+    });
+
+    it('defaults to Postgres being on, so these variables alone are enough', () => {
+      const { POSTGRES_ENABLED: _off, ...withoutFlag } = base;
+      expect(loadConfig({ ...withoutFlag, ...exported }).postgres.enabled).toBe(true);
+    });
+  });
+
+  it('unquote only unwraps one matching pair', () => {
+    expect(unquote("'a'")).toBe('a');
+    expect(unquote('"a b"')).toBe('a b');
+    expect(unquote(`'metrics."t-1"'`)).toBe('metrics."t-1"');
+    for (const untouched of ["'a", 'a"', `'a"`, 'plain', "it's", '"', "''".slice(0, 1)]) {
+      expect(unquote(untouched)).toBe(untouched);
+    }
+    expect(unquote("''")).toBe('');
   });
 
   it('strips a trailing slash from GITHUB_URL', () => {

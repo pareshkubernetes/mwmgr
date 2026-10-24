@@ -39,8 +39,10 @@ const schema = z.object({
   POSTGRES_DATABASE: z.string().default(''),
   POSTGRES_USER: z.string().default(''),
   POSTGRES_PASSWORD: z.string().default(''),
-  POSTGRES_SSL: flag(),
+  // The existing database requires TLS with a CA file chosen by NODE_ENV (see infra/db/pg-ssl.ts).
+  POSTGRES_SSL: flag('true'),
   POSTGRES_CA_FILE: z.string().optional(),
+  POSTGRES_CERT_DIR: z.string().optional(),
   POSTGRES_DATABASE_TABLENAME: z.string().default('metrics."devspaces-metrics"'),
 
   NOTIFICATION_MAIL_URL: z.string().optional(),
@@ -54,6 +56,12 @@ const schema = z.object({
   GITHUB_URL: z.string().default('https://github.com'),
   GITHUB_USER_SUFFIX: z.string().default(''),
 });
+
+/** `'1524'` → `1524`, `"a b"` → `a b`; anything not wrapped in one matching pair of quotes is untouched. */
+export function unquote(value: string): string {
+  const match = /^(['"])(.*)\1$/s.exec(value);
+  return match?.[2] ?? value;
+}
 
 export interface AppConfig {
   port: number;
@@ -82,7 +90,12 @@ export interface AppConfig {
     user: string;
     password: string;
     ssl: boolean;
+    /** Explicit CA bundle; when unset the file is chosen from NODE_ENV (dev.pem / uat.pem / prod.pem). */
     caFile?: string;
+    certDir?: string;
+    /** NODE_ENV, which selects the CA file and whether the hostname check is relaxed (development only). */
+    env: string;
+    /** Existing metrics table, e.g. metrics."devspaces-metrics-dev". The service only ever inserts into it. */
     table: string;
   };
   notification: {
@@ -99,8 +112,13 @@ export interface AppConfig {
 
 /** Parse and validate the environment once, at startup. Throws a readable error listing every problem. */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
-  // An exported-but-empty variable (`FOO=`) is treated as unset.
-  const cleaned = Object.fromEntries(Object.entries(env).filter(([, v]) => v !== undefined && v !== ''));
+  // An exported-but-empty variable (`FOO=`) is treated as unset. Values that still carry their shell quotes
+  // (`'1524'`, `'metrics."devspaces-metrics-dev"'` from a .env file or a pasted export line) are unwrapped.
+  const cleaned = Object.fromEntries(
+    Object.entries(env)
+      .filter(([, v]) => v !== undefined && v !== '')
+      .map(([k, v]) => [k, unquote(v as string)]),
+  );
   const parsed = schema.safeParse(cleaned);
   if (!parsed.success) {
     const problems = parsed.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`);
@@ -111,9 +129,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     throw new Error(
       'Invalid configuration:\n  - POSTGRES_DATABASE and POSTGRES_USER are required when POSTGRES_ENABLED=true',
     );
-  }
-  if (e.POSTGRES_ENABLED && e.POSTGRES_SSL && !e.POSTGRES_CA_FILE) {
-    throw new Error('Invalid configuration:\n  - POSTGRES_CA_FILE is required when POSTGRES_SSL=true');
   }
   return {
     port: e.PORT,
@@ -147,6 +162,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       password: e.POSTGRES_PASSWORD,
       ssl: e.POSTGRES_SSL,
       caFile: e.POSTGRES_CA_FILE,
+      certDir: e.POSTGRES_CERT_DIR,
+      env: e.NODE_ENV,
       table: e.POSTGRES_DATABASE_TABLENAME,
     },
     notification: {
