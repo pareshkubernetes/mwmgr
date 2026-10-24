@@ -93,25 +93,44 @@ export class MetricsRepository implements MetricsStore {
     return this.columns;
   }
 
+  /**
+   * Read-only column discovery, two independent ways: the catalog (works with INSERT-only privileges),
+   * then an empty SELECT whose result metadata lists the columns (works when the catalog is hidden).
+   */
   private async discoverColumns(): Promise<Set<string> | undefined> {
-    const { schema, name } = parseTableName(this.table);
+    const errors: string[] = [];
+
     try {
+      const { schema, name } = parseTableName(this.table);
       const result = (await this.db.query(
-        `SELECT column_name FROM information_schema.columns
-          WHERE table_name = $1 AND table_schema = COALESCE($2, current_schema())`,
-        [name, schema ?? null],
+        schema
+          ? 'SELECT column_name FROM information_schema.columns WHERE table_schema = $1 AND table_name = $2'
+          : 'SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = $1',
+        schema ? [schema, name] : [name],
       )) as { rows?: { column_name: string }[] };
       const names = (result.rows ?? []).map((row) => row.column_name.toLowerCase());
       if (names.length > 0) return new Set(names);
-      this.logger.warn('metrics.columns_unknown', {
-        table: this.table,
-        reason: 'no columns visible (table missing or no access to information_schema); inserting all fields',
-      });
     } catch (error) {
-      this.logger.warn('metrics.columns_discovery_failed', { table: this.table, error: errorMessage(error) });
+      errors.push(`information_schema: ${errorMessage(error)}`);
+    }
+
+    try {
+      const result = (await this.db.query(`SELECT * FROM ${this.table} LIMIT 0`)) as {
+        fields?: { name: string }[];
+      };
+      const names = (result.fields ?? []).map((field) => field.name.toLowerCase());
+      if (names.length > 0) return new Set(names);
+    } catch (error) {
+      errors.push(`select: ${errorMessage(error)}`);
       // Do not cache a failure: try again on the next insert.
       this.columns = undefined;
     }
+
+    this.logger.warn('metrics.columns_unknown', {
+      table: this.table,
+      reason: 'could not read the table columns; inserting all fields',
+      errors: errors.join(' | '),
+    });
     return undefined;
   }
 

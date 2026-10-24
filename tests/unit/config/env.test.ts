@@ -51,7 +51,7 @@ describe('loadConfig', () => {
       /POSTGRES_DATABASE and POSTGRES_USER/,
     );
     const ok = loadConfig({ ...base, POSTGRES_ENABLED: 'true', POSTGRES_DATABASE: 'd', POSTGRES_USER: 'u' });
-    expect(ok.postgres).toMatchObject({ enabled: true, database: 'd', user: 'u', port: 5432, ssl: false });
+    expect(ok.postgres).toMatchObject({ enabled: true, database: 'd', user: 'u', port: 5432, ssl: true });
   });
 
   it('uses TLS to Postgres by default, as the original service always did', () => {

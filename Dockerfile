@@ -7,12 +7,13 @@ COPY src ./src
 RUN npm run build && npm prune --omit=dev
 
 FROM node:22-alpine
+# NODE_ENV (development | uat | production) also selects the Postgres CA file; set it per deployment.
+# Mount the CA bundles at /app/backend/cert (dev.pem / uat.pem / prod.pem) or point POSTGRES_CERT_DIR elsewhere.
 ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY package.json ./
-COPY migrations ./migrations
 USER 1001
 EXPOSE 3050
 CMD ["node", "dist/index.js"]

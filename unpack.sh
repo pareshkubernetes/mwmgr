@@ -59,7 +59,13 @@ MANIFEST="$STAGE/.manifest"
 mkdir -p "$STAGE/files"
 
 # ---- 1. split the text file into a staging directory (nothing touches the target yet) -----------------
-awk -v stage="$STAGE/files" -v manifest="$MANIFEST" '
+# extract STRIP: with STRIP=1 exactly one CR is removed from every line, which undoes a naive LF -> CRLF
+# conversion of the whole text file. It is done here, byte-exact, because the Windows sed/awk text modes would
+# also eat the CR of a file that legitimately has CRLF endings.
+# BINMODE=3: gawk on Windows (Git Bash) otherwise strips the CR from CRLF files; other awks ignore it.
+extract() {
+rm -rf "$STAGE/files"; mkdir -p "$STAGE/files"; : > "$MANIFEST"
+awk -v BINMODE=3 -v strip="$1" -v stage="$STAGE/files" -v manifest="$MANIFEST" '
 function fail(msg) { print "unpack: " msg > "/dev/stderr"; failed = 1; exit 1 }
 function safe(p,   t) {
   if (p == "" || p ~ /^\// || p !~ /^[A-Za-z0-9._@+=, \/-]+$/) return 0
@@ -81,6 +87,7 @@ function finish(   cmd) {
   infile = 0; count++
 }
 {
+  if (strip + 0) sub(/\r$/, "")
   m = $0; sub(/\r$/, "", m)
   if (!infile) {
     if (m ~ /^#### token: /) { tok = substr(m, 13); next }
@@ -105,7 +112,7 @@ function finish(   cmd) {
     next
   }
   if (index(m, "@@@END@" tok) == 1 && m == "@@@END@" tok) { finish(); next }
-  if (enc == "b64") { print $0 | pipecmd; next }
+  if (enc == "b64") { print m | pipecmd; next }
   if (have) printf "%s\n", prev > outpath
   prev = $0; have = 1
 }
@@ -116,23 +123,38 @@ END {
   if (count != declared) fail("bundle declares " declared " files but contains " count)
 }
 ' "$IN"
+}
 
 # ---- 2. verify every file against its recorded SHA-256 (repairing CRLF conversion if provable) --------
+BAD=""
+verify() {
+  local path sum enc
+  while IFS=$'\t' read -r path sum enc; do
+    [ -n "$path" ] || continue
+    if [ "$(hash_of "$STAGE/files/$path")" != "$sum" ]; then BAD="$path"; return 1; fi
+  done < "$MANIFEST"
+  return 0
+}
+
 REPAIRED=0
-while IFS=$'\t' read -r path sum enc; do
-  [ -n "$path" ] || continue
-  f="$STAGE/files/$path"
-  if [ "$(hash_of "$f")" != "$sum" ]; then
-    sed 's/\r$//' "$f" > "$f.fix"
-    if [ "$(hash_of "$f.fix")" = "$sum" ]; then
-      mv "$f.fix" "$f"; REPAIRED=1
+extract 0
+if ! verify; then
+  # Was the whole text file converted from LF to CRLF (an editor, e-mail client or git autocrlf)? Try the exact
+  # inverse; it is only accepted if EVERY file then matches its checksum.
+  if head -n 1 "$IN" | od -An -c | grep -q '\\r'; then
+    first_bad="$BAD"
+    extract 1
+    if verify; then
+      REPAIRED=1
     else
-      rm -f "$f.fix"
-      echo "unpack: checksum mismatch for $path (file was edited or damaged in transit); nothing was written" >&2
+      echo "unpack: checksum mismatch for $first_bad (file was edited or damaged in transit; the line endings look converted to CRLF but converting them back did not restore it); nothing was written" >&2
       exit 1
     fi
+  else
+    echo "unpack: checksum mismatch for $BAD (file was edited or damaged in transit); nothing was written" >&2
+    exit 1
   fi
-done < "$MANIFEST"
+fi
 [ "$REPAIRED" = 1 ] && echo "Note: line endings had been converted to CRLF; converted back, every file matches its checksum." >&2
 
 TOTAL="$(grep -c . "$MANIFEST" || true)"

@@ -6,9 +6,11 @@
 #   bash pack.sh -o other.txt      choose the output file
 #   bash pack.sh --list            only list the files that would be packed
 #
-# Included : src, tests, migrations, scripts, docs, helm, kustomize.server, base, overlays, README.md,
-#            package.json, package-lock.json, tsconfig*.json, vitest/eslint/prettier configs,
+# Included : src, tests, scripts, docs, helm, kustomize.server, base, overlays, certs (if present),
+#            README.md, package.json, package-lock.json, tsconfig*.json, vitest/eslint/prettier configs,
 #            Dockerfile, .dockerignore, .gitignore, .env.example, pack.sh, unpack.sh
+#            (no migrations: the Postgres table already exists and is never created by the app)
+# Refused  : any file containing a private key (certs/ may hold public CA bundles only)
 # Excluded : node_modules, dist, coverage, .git, legacy, prompt, .env (secrets), *.bundle.txt, the output file
 
 set -euo pipefail
@@ -22,14 +24,14 @@ while [ $# -gt 0 ]; do
   case "$1" in
     -o) OUT="${2:?-o needs a file name}"; shift 2 ;;
     --list) LIST_ONLY=1; shift ;;
-    -h|--help) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "pack: unknown argument: $1" >&2; exit 1 ;;
   esac
 done
 
-DIRS=(src tests migrations scripts docs helm kustomize.server base overlays)
+DIRS=(src tests scripts docs helm kustomize.server base overlays certs)
 ROOT_FILES=(README.md package.json package-lock.json tsconfig.json tsconfig.build.json vitest.config.ts
-  eslint.config.js .prettierrc.json .prettierignore .gitignore .dockerignore .env.example Dockerfile
+  eslint.config.js .prettierrc.json .prettierignore .gitignore .gitattributes .dockerignore .env.example Dockerfile
   pack.sh unpack.sh)
 
 collect() {
@@ -62,6 +64,13 @@ if [ "$LIST_ONLY" = 1 ]; then
   exit 0
 fi
 
+for f in "${FILES[@]}"; do
+  if grep -qE -e '-----BEGIN [A-Z ]*PRIVATE KEY-----' "$f" 2>/dev/null; then
+    echo "pack: refusing to pack $f: it contains a private key" >&2
+    exit 1
+  fi
+done
+
 hash_of() {
   if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1
   else shasum -a 256 "$1" | cut -d' ' -f1; fi
@@ -71,7 +80,6 @@ hash_of() {
 TOKEN=""
 while :; do
   TOKEN="$(head -c 12 /dev/urandom | od -An -tx1 | tr -d ' \n')"
-  grep -rqF "@@@" /dev/null 2>/dev/null || true
   clash=0
   for f in "${FILES[@]}"; do
     if grep -qF "@@@FILE@$TOKEN" "$f" 2>/dev/null || grep -qF "@@@END@$TOKEN" "$f" 2>/dev/null; then clash=1; break; fi

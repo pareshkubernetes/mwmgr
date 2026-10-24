@@ -80,8 +80,14 @@ These rules are binding for every change. If a rule must be broken, say why in t
    PAT/gitconfig changes) records one row to `metrics."devspaces-metrics"`, success **or** failure.
 2. Recording is best-effort: a database failure is logged and must never fail or delay the
    user's action beyond a short timeout.
-3. The row shape is defined once (`MetricsRecord`); schema lives in `migrations/`.
-4. Timestamps are stored as `timestamptz` (UTC). The CST format is for logs and emails only.
+3. The row shape is defined once (`MetricsRecord`). The metrics table **already exists** and is owned by the
+   database team: the service never issues DDL (no `CREATE`, `ALTER`, `DROP`) and ships no migrations. It only
+   `INSERT`s, plus read-only `SELECT`s of the table's column list so it can write into an older table that lacks
+   some of our columns. A test asserts this. The table SQL under `tests/helpers/` is a test fixture only.
+4. Postgres is configured only through the existing variables (`POSTGRES_DATABASE`, `_HOSTNAME`, `_PASSWORD`,
+   `_PORT`, `_USER`, `_DATABASE_TABLENAME`) and `NODE_ENV`, which picks the CA file (dev/uat/prod) as before.
+5. Timestamps are written as UTC wall-clock text (`2026-01-02 03:04:05.678`), as the original service did. The
+   CST format is for logs and emails only.
 
 ## 7. Testing
 

@@ -24,7 +24,33 @@ npm run build && npm start  # production
 | `npm run test:coverage`                               | all layers with a coverage gate            |
 | `npm run bundle` / `bundle:all` / `restore -- <file>` | see "Bundle and restore"                   |
 
-Create the metrics table once: `psql -f migrations/001_devspaces_metrics.sql`.
+## Postgres: the existing database
+
+Metrics go into the **existing** Orion database. workspace-mgr creates nothing (no tables, schemas or migrations);
+it only inserts rows into the table named by `POSTGRES_DATABASE_TABLENAME`.
+
+Same variables as the original service:
+
+```bash
+export POSTGRES_DATABASE=orion_dev_metadata
+export POSTGRES_HOSTNAME=NAORI01DPS_INSTANCE1.pgaas.dyn.nsroot.net
+export POSTGRES_PASSWORD=...
+export POSTGRES_PORT='1524'
+export POSTGRES_USER=app_orion_pgsql_dev
+export POSTGRES_DATABASE_TABLENAME='metrics."devspaces-metrics-dev"'
+export NODE_ENV=development
+```
+
+- **TLS** is always on and the server certificate is verified, as before. `NODE_ENV` picks the CA file:
+  `development` → `./certs/dev.pem` (hostname check relaxed), `uat` → `/app/backend/cert/uat.pem`,
+  `production` → `/app/backend/cert/prod.pem`. Override with `POSTGRES_CERT_DIR` or `POSTGRES_CA_FILE`.
+  The app refuses to start, naming the missing file, if the CA cannot be read.
+- **Columns:** the service reads the table's column list once and writes only the columns that exist (it knows
+  `timestamp, csiid, soeid, eventtype, resourcename, resourcetype, status, limitcpu, limitmemory, requestcpu,
+requestmemory, duration, storage, useraction, errordetail, workspaceversion, editorname`). A table without
+  `workspaceversion` / `editorname` still works; a warning names what is not stored.
+- **Timestamps** are written as UTC wall-clock text, as the original did.
+- A database problem never blocks a workspace action: it is logged and the action continues.
 
 ## API (version 1)
 
@@ -97,7 +123,30 @@ http (routes, auth, validation)  →  services (rules)  →  ports ← infra (Ku
 The cluster is always in memory: nothing here talks to a real OpenShift. Run a smoke test against your dev
 cluster before first release (see "Not verified").
 
-## Bundle and restore
+## One text file for the whole app (`pack.sh` / `unpack.sh`)
+
+To move the app anywhere with just **two files** (`all-code-file.txt` and `unpack.sh`), no git or zip needed:
+
+```bash
+bash pack.sh                                   # everything needed to run, build and test → all-code-file.txt
+bash unpack.sh all-code-file.txt -o /c/my/app  # rebuild the whole app there, files exactly as they are
+cd /c/my/app && npm ci && npm test && npm run build && npm start
+```
+
+On Windows use Git Bash (paths like `/c/my/app`). Needs only bash, awk and coreutils.
+
+- **Included:** `src`, `tests`, `scripts`, `docs`, `helm`, kustomize folders, `certs/` (if present), `package.json`,
+  `package-lock.json`, all config files, `Dockerfile`, `.env.example`, `README.md`, `pack.sh`, `unpack.sh`.
+- **Never included:** `node_modules`, `dist`, `coverage`, `.git`, `legacy`, `.env*` (secrets). `pack.sh` also refuses
+  to pack any file that contains a private key.
+- **Safe to run:** every file is verified against its SHA-256 before anything is written; existing files that differ
+  are kept unless you pass `--force`; `--dry-run` previews; `--list` lists. Paths that could escape the target folder
+  are rejected. If an editor or git converted the text file to CRLF line endings, `unpack.sh` converts it back, but only
+  when every checksum then matches. `.gitattributes` keeps the `.sh` files LF so bash works on Windows checkouts.
+- Verified by rebuilding the app from the text file in an empty folder and running `npm ci`, typecheck, lint, all
+  tests and the build there.
+
+## Bundle and restore (changed files only, Node)
 
 Pack changed files into one text file, and rebuild them from it elsewhere:
 

@@ -9,7 +9,106 @@ import { makeConfig, makePgMemRepository, writeTestKubeconfig } from '../helpers
 
 const kubeconfig = writeTestKubeconfig();
 
-describe('metrics table (migration + repository on a real SQL engine)', () => {
+/**
+ * The table as the ORIGINAL service wrote it: no workspaceversion / editorname, but an errordetail column.
+ * It lives in `public` here because pg-mem reports every table under `public` in information_schema (real Postgres
+ * keeps the `metrics` schema; the exact catalog SQL for that is pinned in tests/unit/infra/MetricsRepository.test.ts).
+ */
+const LEGACY_TABLE_SQL = `
+  CREATE TABLE public."devspaces-metrics-dev" (
+    id SERIAL PRIMARY KEY,
+    "timestamp" TIMESTAMP,
+    csiid VARCHAR(32),
+    soeid VARCHAR(64),
+    eventtype VARCHAR(32),
+    resourcename VARCHAR(255),
+    resourcetype VARCHAR(64),
+    status JSONB,
+    limitcpu NUMERIC,
+    limitmemory NUMERIC,
+    requestcpu NUMERIC,
+    requestmemory NUMERIC,
+    duration INTERVAL,
+    useraction VARCHAR(32),
+    storage NUMERIC,
+    errordetail TEXT
+  );`;
+
+describe('writing into the EXISTING table of the Orion database', () => {
+  const base = {
+    timestamp: new Date('2026-03-04T05:06:07.089Z'),
+    csiid: '177398',
+    soeid: 'pp58386',
+    eventtype: 'create',
+    resourcename: 'java-maven-ab12',
+    resourcetype: 'workspace',
+    status: { failed: false, error: '', message: '' },
+    useraction: 'user',
+    limitcpu: 2,
+    limitmemory: 4,
+    requestcpu: 0.5,
+    requestmemory: 1,
+    duration: '2 hours 5 minutes',
+    storage: 3,
+    workspaceversion: '2.0.0',
+    editorname: 'vscode',
+  } as const;
+
+  it('works with a table shaped like the original one, using the configured dev table name', async () => {
+    const { repo, query } = await makePgMemRepository({
+      sql: LEGACY_TABLE_SQL,
+      table: 'public."devspaces-metrics-dev"',
+    });
+    await repo.insert(base);
+    await repo.insert({
+      ...base,
+      eventtype: 'delete',
+      status: { failed: true, error: 'namespace is terminating', message: '' },
+    });
+
+    const rows = await query('SELECT * FROM public."devspaces-metrics-dev" ORDER BY id');
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({
+      soeid: 'pp58386',
+      csiid: '177398',
+      eventtype: 'create',
+      errordetail: null,
+    });
+    expect(rows[1]).toMatchObject({ eventtype: 'delete', errordetail: 'namespace is terminating' });
+    expect(Number(rows[0]?.limitcpu)).toBe(2);
+    expect(rows[0]).not.toHaveProperty('workspaceversion');
+    // the timestamp is stored as the UTC wall-clock time, exactly as the original service did
+    expect(new Date(rows[0]?.timestamp as Date).toISOString()).toBe('2026-03-04T05:06:07.089Z');
+  });
+
+  it('creates nothing: the database has exactly the objects it started with', async () => {
+    const { repo, query } = await makePgMemRepository({
+      sql: LEGACY_TABLE_SQL,
+      table: 'public."devspaces-metrics-dev"',
+    });
+    const snapshot = () =>
+      query(
+        `SELECT table_schema, table_name FROM information_schema.tables
+          WHERE table_schema NOT IN ('information_schema', 'pg_catalog') ORDER BY 1, 2`,
+      );
+    const before = await snapshot();
+    await repo.insert(base);
+    await repo.ping();
+    expect(await snapshot()).toEqual(before);
+    expect(before).toEqual([{ table_schema: 'public', table_name: 'devspaces-metrics-dev' }]);
+  });
+
+  it('reports a missing table instead of creating it', async () => {
+    const { repo, query } = await makePgMemRepository({
+      sql: 'CREATE SCHEMA metrics;',
+      table: 'metrics."devspaces-metrics-dev"',
+    });
+    await expect(repo.insert(base)).rejects.toThrow();
+    expect(await query(`SELECT table_name FROM information_schema.tables`)).toEqual([]);
+  });
+});
+
+describe('metrics table (test fixture + repository on a real SQL engine)', () => {
   it('stores every column of a record', async () => {
     const { repo, query } = await makePgMemRepository();
     await repo.insert({

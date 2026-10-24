@@ -58,13 +58,24 @@ const ALL = [
 /** The shape the ORIGINAL service wrote (no workspaceversion / editorname). */
 const LEGACY = ALL.filter((c) => c !== 'workspaceversion' && c !== 'editorname');
 
-function fakeDb(columns: string[] | Error | 'none') {
+type Path = 'ok' | 'empty' | 'error';
+
+/** `catalog` = information_schema lookup, `select` = `SELECT * … LIMIT 0` metadata lookup. */
+function fakeDb(
+  columns: string[] | Error | 'none',
+  paths: { catalog: Path; select: Path } = { catalog: 'ok', select: 'ok' },
+) {
   const queries: { sql: string; values?: unknown[] }[] = [];
+  const names = Array.isArray(columns) ? columns : [];
   const query = vi.fn(async (sql: string, values?: unknown[]) => {
     queries.push({ sql, values });
     if (sql.includes('information_schema.columns')) {
-      if (columns instanceof Error) throw columns;
-      return { rows: columns === 'none' ? [] : columns.map((c) => ({ column_name: c })) };
+      if (columns instanceof Error || paths.catalog === 'error') throw new Error('permission denied');
+      return { rows: paths.catalog === 'ok' ? names.map((c) => ({ column_name: c })) : [] };
+    }
+    if (/LIMIT 0$/.test(sql)) {
+      if (columns instanceof Error || paths.select === 'error') throw new Error('permission denied');
+      return { rows: [], fields: paths.select === 'ok' ? names.map((name) => ({ name })) : [] };
     }
     return {};
   });
@@ -126,7 +137,35 @@ describe('MetricsRepository.insert', () => {
   it('matches the table by schema and unquoted name', async () => {
     const { db, queries } = fakeDb(ALL);
     await new MetricsRepository(db, 'metrics."devspaces-metrics-dev"').insert(record);
-    expect(queries[0]?.values).toEqual(['devspaces-metrics-dev', 'metrics']);
+    expect(queries[0]?.values).toEqual(['metrics', 'devspaces-metrics-dev']);
+  });
+
+  it('looks in the current schema when the table name is unqualified', async () => {
+    const { db, queries } = fakeDb(ALL);
+    await new MetricsRepository(db, 'devspaces_metrics').insert(record);
+    expect(queries[0]?.sql).toContain('current_schema()');
+    expect(queries[0]?.values).toEqual(['devspaces_metrics']);
+  });
+
+  it('reads the columns from an empty SELECT when the catalog shows nothing (restricted information_schema)', async () => {
+    const { db, insertQuery } = fakeDb(LEGACY, { catalog: 'empty', select: 'ok' });
+    const { lines, logger } = logs();
+    await new MetricsRepository(db, 'metrics."devspaces-metrics-dev"', logger).insert(record);
+    expect(insertQuery()?.sql).not.toContain('workspaceversion');
+    expect(lines.some((l) => l.event === 'metrics.columns_unknown')).toBe(false);
+  });
+
+  it('also uses the empty SELECT when the catalog query itself fails', async () => {
+    const { db, insertQuery } = fakeDb(LEGACY, { catalog: 'error', select: 'ok' });
+    await new MetricsRepository(db).insert(record);
+    expect(insertQuery()?.sql).not.toContain('editorname');
+  });
+
+  it('uses the catalog without needing SELECT rights on the table', async () => {
+    const { db, queries, insertQuery } = fakeDb(LEGACY, { catalog: 'ok', select: 'error' });
+    await new MetricsRepository(db).insert(record);
+    expect(queries.some((q) => /LIMIT 0$/.test(q.sql))).toBe(false);
+    expect(insertQuery()?.sql).not.toContain('workspaceversion');
   });
 
   it('stores the error text in errordetail only for failures', async () => {
@@ -142,7 +181,8 @@ describe('MetricsRepository.insert', () => {
     const repo = new MetricsRepository(db, undefined, logger);
     await repo.insert(record);
     await repo.insert(record);
-    expect(lines.filter((l) => l.event === 'metrics.columns_discovery_failed')).toHaveLength(2);
+    expect(lines.filter((l) => l.event === 'metrics.columns_unknown')).toHaveLength(2);
+    expect(String(lines[0]?.errors)).toContain('information_schema');
     expect(queries.filter((q) => q.sql.includes('information_schema'))).toHaveLength(2);
     expect(queries.filter((q) => q.sql.startsWith('INSERT'))[0]?.values).toHaveLength(17);
   });

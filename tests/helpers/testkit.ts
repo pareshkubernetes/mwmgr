@@ -93,17 +93,19 @@ export function makeContainer(
 }
 
 /** A real Postgres-compatible database in memory, created from the shipped migration. */
-export async function makePgMemRepository(): Promise<{
+export async function makePgMemRepository(options: { sql?: string; table?: string } = {}): Promise<{
   repo: MetricsRepository;
   query: (sql: string) => Promise<Record<string, unknown>[]>;
 }> {
   const db = newDb();
-  const migration = readFileSync(fileURLToPath(new URL('./metrics-table.sql', import.meta.url)), 'utf8');
-  db.public.none(migration);
+  // Test-only stand-in for the table that already exists in the real database.
+  const schema =
+    options.sql ?? readFileSync(fileURLToPath(new URL('./metrics-table.sql', import.meta.url)), 'utf8');
+  db.public.none(schema);
   const { Pool } = db.adapters.createPg();
   const pool = new Pool();
   return {
-    repo: new MetricsRepository(pool),
+    repo: new MetricsRepository(pool, options.table),
     query: async (sql) => (await pool.query(sql)).rows as Record<string, unknown>[],
   };
 }

@@ -1,4 +1,4 @@
-﻿# Workspace Mgr — Build & Review Checklist
+# Workspace Mgr — Build & Review Checklist
 
 Tick items as they are completed. Items map to [PROJECT_RULES.md](./PROJECT_RULES.md).
 
@@ -16,7 +16,7 @@ Tick items as they are completed. Items map to [PROJECT_RULES.md](./PROJECT_RULE
 - [x] ESLint + Prettier configs
 - [x] Vitest config with three projects and coverage thresholds
 - [x] `.env.example`, `.gitignore`, `.dockerignore`, `Dockerfile`
-- [x] `migrations/001_devspaces_metrics.sql`
+- [x] No migrations: the existing Postgres table is used as-is (the test fixture SQL lives in `tests/helpers/`)
 
 ## C. Core
 
@@ -31,7 +31,8 @@ Tick items as they are completed. Items map to [PROJECT_RULES.md](./PROJECT_RULE
 
 - [x] Ports: `KubeGateway`, `MetricsStore`, `DevfileRegistry`, `Notifier`, `UserDirectory`
 - [x] `KubeClient` (real, `@kubernetes/client-node`)
-- [x] `MetricsRepository` (pg Pool, parameterised SQL, SSL options)
+- [x] `MetricsRepository` (pg Pool, parameterised INSERT only, adapts to the existing table's columns, never DDL)
+- [x] Postgres TLS exactly as the original: CA file chosen by `NODE_ENV` (dev/uat/prod), hostname check relaxed only in development
 - [x] `DevfileRegistryClient` (catalog + devfile by name/version)
 - [x] `EmailNotifier` + templates (new namespace / existing namespace / deleted), HTML-escaped
 - [x] `GraphqlUserDirectory` (first name lookup, falls back to soeid)
@@ -64,6 +65,8 @@ Tick items as they are completed. Items map to [PROJECT_RULES.md](./PROJECT_RULE
 - [x] Integration tests: routes + services + pg-mem + in-memory kube + HTTP registry
 - [x] E2E tests: login → create → list → start → stop → delete; PAT; gitconfig; deploy project; limits; auth failures; legacy-path client
 - [x] Coverage thresholds met
+- [x] `pack.sh` / `unpack.sh`: whole app in one text file and back, checksummed, never overwrites without `--force`
+- [x] Bash scripts tested (exact round trip incl. CRLF/binary/empty files, tamper, truncation, CRLF repair, path traversal, private-key guard)
 - [x] Bundle/restore scripts tested (format, CLI round trip, git changed-files mode, safety)
 
 ## H. Release
