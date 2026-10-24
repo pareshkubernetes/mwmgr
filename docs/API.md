@@ -148,6 +148,12 @@ are supported. Stored secret values are never returned by this API.
 ## Troubleshooting with daily logs
 
 Production writes one redacted JSON entry per line to `logs/app-YYYY-MM-DD.log`.
+Each entry includes `timestamp` (`YYYY-MM-DD HH:MM:SS` in the process's local timezone),
+`file`, and `function`. The ISO `time` field remains available for precise filtering.
+Readable console and log-search output uses
+`[timestamp] [File: filename] [Function: functionName]`. Continuation lines carry the
+same prefix. Source details come from the log call, or the original error stack when
+an Error object is provided; unnamed callbacks appear as `anonymous`.
 Dates are UTC and files switch automatically at midnight. Console formatting is
 independent. `LOG_DIRECTORY` selects the directory. Mount a writable volume there
 when using a read-only filesystem, and persistent storage if logs must survive pod

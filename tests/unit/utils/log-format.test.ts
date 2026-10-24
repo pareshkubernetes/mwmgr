@@ -9,7 +9,7 @@ import {
 } from '../../../src/utils/log-format.js';
 
 const time = new Date(2026, 0, 2, 3, 4, 5, 678); // local time, as the formatter prints it
-const T = '2026-01-02 03:04:05.678';
+const T = '[2026-01-02 03:04:05] [File: unknown] [Function: anonymous]';
 const entry = (kind: LogKind, event: string, fields: Record<string, unknown> = {}): LogEntry => ({
   time,
   kind,
@@ -56,9 +56,9 @@ describe('colours: errors red, warnings orange, successes green, everything else
 });
 
 describe('layout', () => {
-  it('formats local time as YYYY-MM-DD HH:mm:ss.SSS', () => {
-    expect(formatLocalTime(time)).toBe(T);
-    expect(formatLocalTime(new Date(2026, 10, 9, 23, 59, 1, 5))).toBe('2026-11-09 23:59:01.005');
+  it('formats local time as YYYY-MM-DD HH:mm:ss', () => {
+    expect(formatLocalTime(time)).toBe('2026-01-02 03:04:05');
+    expect(formatLocalTime(new Date(2026, 10, 9, 23, 59, 1, 5))).toBe('2026-11-09 23:59:01');
   });
 
   it('a bare event is one line: time | LEVEL | event', () => {
@@ -111,7 +111,13 @@ describe('layout', () => {
 
   it('leaves out fields that have no value (a request without a user)', () => {
     const out = plain(
-      entry('success', 'request', { method: 'GET', path: '/api/v1/healthz', status: 200, ms: 1, soeid: undefined }),
+      entry('success', 'request', {
+        method: 'GET',
+        path: '/api/v1/healthz',
+        status: 200,
+        ms: 1,
+        soeid: undefined,
+      }),
     );
     expect(out).not.toContain('soeid');
     expect(out).not.toContain('undefined');
@@ -132,14 +138,14 @@ describe('layout', () => {
     expect(out).toBe(
       [
         `${T} | OK    | server.listening`,
-        '    port     : 8080',
-        '    cluster  : https://x',
-        '    editors:',
-        '      vscode   : a',
-        '      intellij : b',
-        '    postgres : disabled',
-        '    empty    : {}',
-        '    list     : [1,2]',
+        `${T}     port     : 8080`,
+        `${T}     cluster  : https://x`,
+        `${T}     editors:`,
+        `${T}       vscode   : a`,
+        `${T}       intellij : b`,
+        `${T}     postgres : disabled`,
+        `${T}     empty    : {}`,
+        `${T}     list     : [1,2]`,
         '',
       ].join('\n'),
     );
@@ -166,9 +172,9 @@ describe('layout', () => {
     expect(out).toBe(
       [
         `${T} | ERROR | request.failed`,
-        '    requestId : 7989eb27-2d84-4d15-aa0b-95003ff51f85',
-        '    code      : UPSTREAM_ERROR',
-        '    error     : Devfile registry catalog: No response received from server',
+        `${T}     requestId : 7989eb27-2d84-4d15-aa0b-95003ff51f85`,
+        `${T}     code      : UPSTREAM_ERROR`,
+        `${T}     error     : Devfile registry catalog: No response received from server`,
         '',
       ].join('\n'),
     );

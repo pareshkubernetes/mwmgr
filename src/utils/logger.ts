@@ -1,4 +1,4 @@
-import { formatPretty, type LogKind } from './log-format.js';
+import { formatPretty, formatLocalTime, type LogKind } from './log-format.js';
 import { appendDailyLog } from '../config/daily-logs.js';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'silent';
@@ -22,6 +22,7 @@ export interface Logger {
 export type LogSink = (line: string) => void;
 
 export interface LoggerOptions {
+  source?: { file: string; function: string };
   dailyFiles?: boolean;
   /** `json` (one JSON object per line, for log collectors; the default here) or `pretty` (terminal). */
   format?: LogFormat;
@@ -29,6 +30,17 @@ export interface LoggerOptions {
   color?: boolean;
   /** Clock, replaceable in tests. */
   now?: () => Date;
+}
+
+function logSource(error?: Error): { file: string; function: string } {
+  for (const frame of (error?.stack ?? new Error().stack ?? '').split('\n').slice(1)) {
+    const match = /^\s*at (?:(.*?) \()?(.+?):\d+:\d+\)?$/.exec(frame);
+    if (!match) continue;
+    const path = match[2]?.replaceAll('\\', '/') ?? '';
+    if (/\/(logger\.(?:ts|js))$/.test(path) || path.startsWith('node:')) continue;
+    return { file: path.split('/').at(-1) || 'unknown', function: match[1] || 'anonymous' };
+  }
+  return { file: 'unknown', function: 'anonymous' };
 }
 
 export function redact(value: unknown, depth = 0): unknown {
@@ -58,11 +70,18 @@ export function createLogger(
     if (ORDER[severity] < ORDER[level]) return;
     const merged = {
       ...(redact(bindings) as LogFields),
-      ...(redact(fields ?? {}) as LogFields),
+      ...(redact(
+        fields?.error instanceof Error ? { ...fields, error: fields.error.message } : (fields ?? {}),
+      ) as LogFields),
+      ...(options.source ?? logSource(fields?.error instanceof Error ? fields.error : undefined)),
     };
     const time = now();
+    const timestamp = formatLocalTime(time);
     if (options.dailyFiles)
-      appendDailyLog(JSON.stringify({ ...merged, time: time.toISOString(), level: severity, event }), time);
+      appendDailyLog(
+        JSON.stringify({ ...merged, time: time.toISOString(), timestamp, level: severity, event }),
+        time,
+      );
     if (format === 'pretty') {
       sink(formatPretty({ time, kind, event, fields: merged }, options.color === true));
       return;
@@ -70,6 +89,7 @@ export function createLogger(
     sink(
       JSON.stringify({
         time: time.toISOString(),
+        timestamp,
         level: severity,
         ...(kind === 'success' ? { outcome: 'success' } : {}),
         event,

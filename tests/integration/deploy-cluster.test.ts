@@ -1,5 +1,5 @@
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { InMemoryKube } from '../helpers/InMemoryKube.js';
 import { startIntegration, type Integration } from '../helpers/integration.js';
 
@@ -59,6 +59,24 @@ describe('workspaces stay on the Dev Spaces cluster, deployment projects go to t
 });
 
 describe('readiness checks both clusters when they are different', () => {
+  it('logs authentication failures without exposing upstream messages or credentials', async () => {
+    const log = vi.spyOn(t.container.logger, 'error');
+    try {
+      t.fakes.kube.failOnce('ping', Object.assign(new Error('Bearer private-token'), { statusCode: 401 }));
+      expect((await request(t.app).get('/api/v1/readyz')).status).toBe(503);
+      expect(log).toHaveBeenCalledWith(
+        'readiness.check_failed',
+        expect.objectContaining({
+          dependency: 'kubernetes',
+          reason: 'authentication_failed',
+          httpStatus: 401,
+        }),
+      );
+      expect(JSON.stringify(log.mock.calls)).not.toContain('private-token');
+    } finally {
+      log.mockRestore();
+    }
+  });
   it('reports each cluster', async () => {
     const res = await request(t.app).get('/api/v1/readyz');
     expect(res.status).toBe(200);

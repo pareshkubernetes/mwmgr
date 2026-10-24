@@ -1,16 +1,4 @@
-/**
- * Human-readable log lines for a terminal.
- *
- *   2026-10-24 03:12:45.123 | OK    | request                        | GET    /api/v1/pp1/workspaces -> 200 (12 ms)  requestId=ab12
- *   2026-10-24 03:12:45.200 | ERROR | request.failed                 | code=UPSTREAM_ERROR  error="cluster is down"
- *   2026-10-24 03:12:46.001 | OK    | server.listening
- *       port        : 8080
- *       cluster     : https://api.namctigtd001d.ecs.dyn.nsroot.net:6443
- *       postgres:
- *         host      : NAORI01DPS_INSTANCE1.pgaas.dyn.nsroot.net
- *
- * Colours (the whole line): errors red, warnings orange, successful calls green, everything else white.
- */
+/** Readable terminal logs with timestamps and source locations. */
 
 export type LogKind = 'debug' | 'info' | 'success' | 'warn' | 'error';
 
@@ -47,11 +35,11 @@ export interface LogEntry {
 
 const pad2 = (n: number): string => String(n).padStart(2, '0');
 
-/** Local time `2026-10-24 03:12:45.123`. */
+/** Local time `2026-10-24 03:12:45`. */
 export function formatLocalTime(d: Date): string {
   return (
     `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ` +
-    `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}.${String(d.getMilliseconds()).padStart(3, '0')}`
+    `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`
   );
 }
 
@@ -119,9 +107,11 @@ function requestMessage(
 
 /** One log entry as text. Multi-line entries end with a blank line so that entries stay visually separate. */
 export function formatPretty(entry: LogEntry, color: boolean): string {
-  const head = `${formatLocalTime(entry.time)} | ${BADGE[entry.kind]} | `;
-  const request = entry.event === 'request' ? requestMessage(entry.fields) : undefined;
-  const fields = Object.entries(request ? request.rest : entry.fields).filter(([, v]) => v !== undefined);
+  const { file = 'unknown', function: functionName = 'anonymous', ...data } = entry.fields;
+  const prefix = `[${formatLocalTime(entry.time)}] [File: ${oneLine(String(file))}] [Function: ${oneLine(String(functionName))}]`;
+  const head = `${prefix} | ${BADGE[entry.kind]} | `;
+  const request = entry.event === 'request' ? requestMessage(data) : undefined;
+  const fields = Object.entries(request ? request.rest : data).filter(([, v]) => v !== undefined);
   const lines: string[] = [];
 
   if (fields.length === 0 && !request) {
@@ -134,7 +124,7 @@ export function formatPretty(entry: LogEntry, color: boolean): string {
     lines.push(
       request ? `${head}${entry.event.padEnd(EVENT_WIDTH)} | ${request.message}` : `${head}${entry.event}`,
     );
-    lines.push(...renderBlock(Object.fromEntries(fields), BLOCK_INDENT));
+    lines.push(...renderBlock(Object.fromEntries(fields), BLOCK_INDENT).map((line) => `${prefix} ${line}`));
     lines.push(''); // blank line after a multi-line entry
   }
 

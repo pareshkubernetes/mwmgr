@@ -1,4 +1,4 @@
-# all-app-code.txt - entire app - generated 2026-10-24T13:51:50Z
+# all-app-code.txt - entire app - generated 2026-10-24T14:56:08Z
 # On the other computer, inside the app folder:   bash recreate-app.sh -f --prune
 # Includes source, tests, configuration templates and checksums; excludes secrets and installed dependencies.
 # Install dependencies from the configured internal npm repository.
@@ -448,6 +448,12 @@ are supported. Stored secret values are never returned by this API.
 ## Troubleshooting with daily logs
 
 Production writes one redacted JSON entry per line to `logs/app-YYYY-MM-DD.log`.
+Each entry includes `timestamp` (`YYYY-MM-DD HH:MM:SS` in the process's local timezone),
+`file`, and `function`. The ISO `time` field remains available for precise filtering.
+Readable console and log-search output uses
+`[timestamp] [File: filename] [Function: functionName]`. Continuation lines carry the
+same prefix. Source details come from the log call, or the original error stack when
+an Error object is provided; unnamed callbacks appear as `anonymous`.
 Dates are UTC and files switch automatically at midnight. Console formatting is
 independent. `LOG_DIRECTORY` selects the directory. Mount a writable volume there
 when using a read-only filesystem, and persistent storage if logs must survive pod
@@ -7717,6 +7723,26 @@ export function gitConfigController(container: Container) {
 import type { RequestHandler } from 'express';
 import type { Container } from '../container.js';
 import { asyncHandler } from '../http/errors.js';
+import { k8sStatus } from '../utils/k8s-errors.js';
+
+function failureDetails(error: unknown) {
+  const cause = error instanceof Error && error.cause ? error.cause : error;
+  const httpStatus = k8sStatus(cause);
+  const message = cause instanceof Error ? cause.message : '';
+  const reason =
+    httpStatus === 401
+      ? 'authentication_failed'
+      : httpStatus === 403
+        ? 'permission_denied'
+        : /certificate|ssl|tls/i.test(message)
+          ? 'certificate_error'
+          : /timeout|timed out|abort/i.test(message)
+            ? 'timeout'
+            : /ENOTFOUND|ECONNREFUSED|EHOSTUNREACH|fetch failed|connect/i.test(message)
+              ? 'connection_failed'
+              : 'dependency_check_failed';
+  return { reason, ...(httpStatus === undefined ? {} : { httpStatus }) };
+}
 
 export function healthCheckController(container: Container) {
   return {
@@ -7725,23 +7751,20 @@ export function healthCheckController(container: Container) {
     },
     ready: asyncHandler(async (_req, res) => {
       const checks: Record<string, string> = {};
+      const failed = (dependency: string) => (error: unknown) => {
+        checks[dependency] = 'unavailable';
+        container.logger.error('readiness.check_failed', {
+          dependency,
+          requestId: res.locals.requestId as string | undefined,
+          ...failureDetails(error),
+        });
+      };
       await Promise.all([
-        container.kube.ping().then(
-          () => (checks.kubernetes = 'ok'),
-          () => (checks.kubernetes = 'unavailable'),
-        ),
-        container.metrics.ping().then(
-          () => (checks.postgres = 'ok'),
-          () => (checks.postgres = 'unavailable'),
-        ),
+        container.kube.ping().then(() => (checks.kubernetes = 'ok'), failed('kubernetes')),
+        container.metrics.ping().then(() => (checks.postgres = 'ok'), failed('postgres')),
         // only when build/deploy projects live on a different cluster
         ...(container.deployKube !== container.kube
-          ? [
-              container.deployKube.ping().then(
-                () => (checks.deployCluster = 'ok'),
-                () => (checks.deployCluster = 'unavailable'),
-              ),
-            ]
+          ? [container.deployKube.ping().then(() => (checks.deployCluster = 'ok'), failed('deployCluster'))]
           : []),
       ]);
       const ready = Object.values(checks).every((v) => v === 'ok');
@@ -7753,6 +7776,7 @@ export function healthCheckController(container: Container) {
 /src/controllers/logController.ts
 import { z } from 'zod';
 import { queryLogs } from '../config/daily-logs.js';
+import { formatPretty } from '../utils/log-format.js';
 import { asyncHandler } from '../http/errors.js';
 import { parse } from '../http/schemas.js';
 
@@ -7771,17 +7795,22 @@ export function logController() {
       const options = parse(query, req.query);
       const result = await queryLogs(options);
       if (options.format === 'text') {
-        res
-          .type('text')
-          .send(
-            [
-              `Application logs | ${result.from} to ${result.to} | ${result.entries.length} entries | truncated: ${result.truncated}`,
-              ...result.entries.map(
-                ({ time, level, event, ...fields }) =>
-                  `${String(time)} ${String(level).toUpperCase()} ${String(event)} ${JSON.stringify(fields)}`,
+        res.type('text').send(
+          [
+            `Application logs | ${result.from} to ${result.to} | ${result.entries.length} entries | truncated: ${result.truncated}`,
+            ...result.entries.map(({ time, level, event, timestamp: _timestamp, ...fields }) =>
+              formatPretty(
+                {
+                  time: new Date(String(time)),
+                  kind: level === 'error' || level === 'warn' || level === 'debug' ? level : 'info',
+                  event: String(event),
+                  fields,
+                },
+                false,
               ),
-            ].join('\n'),
-          );
+            ),
+          ].join('\n'),
+        );
       } else res.json(result);
     }),
   };
@@ -8302,8 +8331,7 @@ export function createErrorHandler(logger: Logger): ErrorRequestHandler {
     const requestId = res.locals.requestId as string | undefined;
 
     if (err instanceof AppError) {
-      if (err.status >= 500)
-        logger.error('request.failed', { requestId, code: err.code, error: err.message });
+      if (err.status >= 500) logger.error('request.failed', { requestId, code: err.code, error: err });
       res.status(err.status).json(errorBody(err.message, err.code));
       return;
     }
@@ -8318,7 +8346,11 @@ export function createErrorHandler(logger: Logger): ErrorRequestHandler {
       return;
     }
     // Never leak internals for unexpected errors.
-    logger.error('request.crashed', { requestId, path: req.path, error: errorMessage(err) });
+    logger.error('request.crashed', {
+      requestId,
+      path: req.path,
+      error: err instanceof Error ? err : errorMessage(err),
+    });
     res.status(500).json(errorBody('Internal server error', 'INTERNAL_ERROR'));
   };
 }
@@ -10796,19 +10828,7 @@ export function toAppError(context: string, error: unknown): AppError {
 }
 
 /src/utils/log-format.ts
-/**
- * Human-readable log lines for a terminal.
- *
- *   2026-10-24 03:12:45.123 | OK    | request                        | GET    /api/v1/pp1/workspaces -> 200 (12 ms)  requestId=ab12
- *   2026-10-24 03:12:45.200 | ERROR | request.failed                 | code=UPSTREAM_ERROR  error="cluster is down"
- *   2026-10-24 03:12:46.001 | OK    | server.listening
- *       port        : 8080
- *       cluster     : https://api.namctigtd001d.ecs.dyn.nsroot.net:6443
- *       postgres:
- *         host      : NAORI01DPS_INSTANCE1.pgaas.dyn.nsroot.net
- *
- * Colours (the whole line): errors red, warnings orange, successful calls green, everything else white.
- */
+/** Readable terminal logs with timestamps and source locations. */
 
 export type LogKind = 'debug' | 'info' | 'success' | 'warn' | 'error';
 
@@ -10845,11 +10865,11 @@ export interface LogEntry {
 
 const pad2 = (n: number): string => String(n).padStart(2, '0');
 
-/** Local time `2026-10-24 03:12:45.123`. */
+/** Local time `2026-10-24 03:12:45`. */
 export function formatLocalTime(d: Date): string {
   return (
     `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ` +
-    `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}.${String(d.getMilliseconds()).padStart(3, '0')}`
+    `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`
   );
 }
 
@@ -10917,9 +10937,11 @@ function requestMessage(
 
 /** One log entry as text. Multi-line entries end with a blank line so that entries stay visually separate. */
 export function formatPretty(entry: LogEntry, color: boolean): string {
-  const head = `${formatLocalTime(entry.time)} | ${BADGE[entry.kind]} | `;
-  const request = entry.event === 'request' ? requestMessage(entry.fields) : undefined;
-  const fields = Object.entries(request ? request.rest : entry.fields).filter(([, v]) => v !== undefined);
+  const { file = 'unknown', function: functionName = 'anonymous', ...data } = entry.fields;
+  const prefix = `[${formatLocalTime(entry.time)}] [File: ${oneLine(String(file))}] [Function: ${oneLine(String(functionName))}]`;
+  const head = `${prefix} | ${BADGE[entry.kind]} | `;
+  const request = entry.event === 'request' ? requestMessage(data) : undefined;
+  const fields = Object.entries(request ? request.rest : data).filter(([, v]) => v !== undefined);
   const lines: string[] = [];
 
   if (fields.length === 0 && !request) {
@@ -10932,7 +10954,7 @@ export function formatPretty(entry: LogEntry, color: boolean): string {
     lines.push(
       request ? `${head}${entry.event.padEnd(EVENT_WIDTH)} | ${request.message}` : `${head}${entry.event}`,
     );
-    lines.push(...renderBlock(Object.fromEntries(fields), BLOCK_INDENT));
+    lines.push(...renderBlock(Object.fromEntries(fields), BLOCK_INDENT).map((line) => `${prefix} ${line}`));
     lines.push(''); // blank line after a multi-line entry
   }
 
@@ -10942,7 +10964,7 @@ export function formatPretty(entry: LogEntry, color: boolean): string {
 }
 
 /src/utils/logger.ts
-import { formatPretty, type LogKind } from './log-format.js';
+import { formatPretty, formatLocalTime, type LogKind } from './log-format.js';
 import { appendDailyLog } from '../config/daily-logs.js';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'silent';
@@ -10966,6 +10988,7 @@ export interface Logger {
 export type LogSink = (line: string) => void;
 
 export interface LoggerOptions {
+  source?: { file: string; function: string };
   dailyFiles?: boolean;
   /** `json` (one JSON object per line, for log collectors; the default here) or `pretty` (terminal). */
   format?: LogFormat;
@@ -10973,6 +10996,17 @@ export interface LoggerOptions {
   color?: boolean;
   /** Clock, replaceable in tests. */
   now?: () => Date;
+}
+
+function logSource(error?: Error): { file: string; function: string } {
+  for (const frame of (error?.stack ?? new Error().stack ?? '').split('\n').slice(1)) {
+    const match = /^\s*at (?:(.*?) \()?(.+?):\d+:\d+\)?$/.exec(frame);
+    if (!match) continue;
+    const path = match[2]?.replaceAll('\\', '/') ?? '';
+    if (/\/(logger\.(?:ts|js))$/.test(path) || path.startsWith('node:')) continue;
+    return { file: path.split('/').at(-1) || 'unknown', function: match[1] || 'anonymous' };
+  }
+  return { file: 'unknown', function: 'anonymous' };
 }
 
 export function redact(value: unknown, depth = 0): unknown {
@@ -11002,11 +11036,18 @@ export function createLogger(
     if (ORDER[severity] < ORDER[level]) return;
     const merged = {
       ...(redact(bindings) as LogFields),
-      ...(redact(fields ?? {}) as LogFields),
+      ...(redact(
+        fields?.error instanceof Error ? { ...fields, error: fields.error.message } : (fields ?? {}),
+      ) as LogFields),
+      ...(options.source ?? logSource(fields?.error instanceof Error ? fields.error : undefined)),
     };
     const time = now();
+    const timestamp = formatLocalTime(time);
     if (options.dailyFiles)
-      appendDailyLog(JSON.stringify({ ...merged, time: time.toISOString(), level: severity, event }), time);
+      appendDailyLog(
+        JSON.stringify({ ...merged, time: time.toISOString(), timestamp, level: severity, event }),
+        time,
+      );
     if (format === 'pretty') {
       sink(formatPretty({ time, kind, event, fields: merged }, options.color === true));
       return;
@@ -11014,6 +11055,7 @@ export function createLogger(
     sink(
       JSON.stringify({
         time: time.toISOString(),
+        timestamp,
         level: severity,
         ...(kind === 'success' ? { outcome: 'success' } : {}),
         event,
@@ -12575,7 +12617,7 @@ describe('request ids', () => {
 
 /tests/integration/deploy-cluster.test.ts
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { InMemoryKube } from '../helpers/InMemoryKube.js';
 import { startIntegration, type Integration } from '../helpers/integration.js';
 
@@ -12635,6 +12677,24 @@ describe('workspaces stay on the Dev Spaces cluster, deployment projects go to t
 });
 
 describe('readiness checks both clusters when they are different', () => {
+  it('logs authentication failures without exposing upstream messages or credentials', async () => {
+    const log = vi.spyOn(t.container.logger, 'error');
+    try {
+      t.fakes.kube.failOnce('ping', Object.assign(new Error('Bearer private-token'), { statusCode: 401 }));
+      expect((await request(t.app).get('/api/v1/readyz')).status).toBe(503);
+      expect(log).toHaveBeenCalledWith(
+        'readiness.check_failed',
+        expect.objectContaining({
+          dependency: 'kubernetes',
+          reason: 'authentication_failed',
+          httpStatus: 401,
+        }),
+      );
+      expect(JSON.stringify(log.mock.calls)).not.toContain('private-token');
+    } finally {
+      log.mockRestore();
+    }
+  });
   it('reports each cluster', async () => {
     const res = await request(t.app).get('/api/v1/readyz');
     expect(res.status).toBe(200);
@@ -16844,7 +16904,7 @@ import {
 } from '../../../src/utils/log-format.js';
 
 const time = new Date(2026, 0, 2, 3, 4, 5, 678); // local time, as the formatter prints it
-const T = '2026-01-02 03:04:05.678';
+const T = '[2026-01-02 03:04:05] [File: unknown] [Function: anonymous]';
 const entry = (kind: LogKind, event: string, fields: Record<string, unknown> = {}): LogEntry => ({
   time,
   kind,
@@ -16891,9 +16951,9 @@ describe('colours: errors red, warnings orange, successes green, everything else
 });
 
 describe('layout', () => {
-  it('formats local time as YYYY-MM-DD HH:mm:ss.SSS', () => {
-    expect(formatLocalTime(time)).toBe(T);
-    expect(formatLocalTime(new Date(2026, 10, 9, 23, 59, 1, 5))).toBe('2026-11-09 23:59:01.005');
+  it('formats local time as YYYY-MM-DD HH:mm:ss', () => {
+    expect(formatLocalTime(time)).toBe('2026-01-02 03:04:05');
+    expect(formatLocalTime(new Date(2026, 10, 9, 23, 59, 1, 5))).toBe('2026-11-09 23:59:01');
   });
 
   it('a bare event is one line: time | LEVEL | event', () => {
@@ -16946,7 +17006,13 @@ describe('layout', () => {
 
   it('leaves out fields that have no value (a request without a user)', () => {
     const out = plain(
-      entry('success', 'request', { method: 'GET', path: '/api/v1/healthz', status: 200, ms: 1, soeid: undefined }),
+      entry('success', 'request', {
+        method: 'GET',
+        path: '/api/v1/healthz',
+        status: 200,
+        ms: 1,
+        soeid: undefined,
+      }),
     );
     expect(out).not.toContain('soeid');
     expect(out).not.toContain('undefined');
@@ -16967,14 +17033,14 @@ describe('layout', () => {
     expect(out).toBe(
       [
         `${T} | OK    | server.listening`,
-        '    port     : 8080',
-        '    cluster  : https://x',
-        '    editors:',
-        '      vscode   : a',
-        '      intellij : b',
-        '    postgres : disabled',
-        '    empty    : {}',
-        '    list     : [1,2]',
+        `${T}     port     : 8080`,
+        `${T}     cluster  : https://x`,
+        `${T}     editors:`,
+        `${T}       vscode   : a`,
+        `${T}       intellij : b`,
+        `${T}     postgres : disabled`,
+        `${T}     empty    : {}`,
+        `${T}     list     : [1,2]`,
         '',
       ].join('\n'),
     );
@@ -17001,9 +17067,9 @@ describe('layout', () => {
     expect(out).toBe(
       [
         `${T} | ERROR | request.failed`,
-        '    requestId : 7989eb27-2d84-4d15-aa0b-95003ff51f85',
-        '    code      : UPSTREAM_ERROR',
-        '    error     : Devfile registry catalog: No response received from server',
+        `${T}     requestId : 7989eb27-2d84-4d15-aa0b-95003ff51f85`,
+        `${T}     code      : UPSTREAM_ERROR`,
+        `${T}     error     : Devfile registry catalog: No response received from server`,
         '',
       ].join('\n'),
     );
@@ -17026,6 +17092,28 @@ function capture(level: Parameters<typeof createLogger>[0] = 'info') {
 }
 
 describe('logger', () => {
+  it('records the calling file and function with a seconds-resolution timestamp', () => {
+    const { lines, logger } = capture();
+    function recordEvent() {
+      logger.info('source.test');
+    }
+    recordEvent();
+    expect(lines[0]).toMatchObject({ file: 'logger.test.ts', function: 'recordEvent' });
+    expect(lines[0]?.timestamp).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+  });
+  it('uses an error stack to identify its original file and function', () => {
+    const { lines, logger } = capture();
+    const error = new Error('creation failed');
+    error.stack =
+      'Error: creation failed\n    at NamespaceService.ensure (C:\\app\\src\\services\\NamespaceService.ts:42:10)';
+    logger.error('namespace.failed', { error });
+    expect(lines[0]).toMatchObject({
+      file: 'NamespaceService.ts',
+      function: 'NamespaceService.ensure',
+      error: 'creation failed',
+    });
+    expect(JSON.stringify(lines[0])).not.toContain('C:\\app');
+  });
   it('writes one JSON line with level, event and fields', () => {
     const { lines, logger } = capture();
     logger.info('hello', { a: 1 });
@@ -17094,7 +17182,15 @@ describe('logger', () => {
     const now = () => new Date(2026, 0, 2, 3, 4, 5, 678);
     const pretty = (level: Parameters<typeof createLogger>[0] = 'info', color = true) => {
       const out: string[] = [];
-      return { out, logger: createLogger(level, (l) => out.push(l), {}, { format: 'pretty', color, now }) };
+      return {
+        out,
+        logger: createLogger(
+          level,
+          (l) => out.push(l),
+          {},
+          { format: 'pretty', color, now, source: { file: 'logger.test.ts', function: 'testLog' } },
+        ),
+      };
     };
 
     it('paints each kind in its colour: error red, warn orange, success green, info and debug white', () => {
@@ -17105,11 +17201,11 @@ describe('logger', () => {
       logger.info('i');
       logger.debug('d');
       expect(out).toEqual([
-        '\u001b[31m2026-01-02 03:04:05.678 | ERROR | e\u001b[0m',
-        '\u001b[38;5;208m2026-01-02 03:04:05.678 | WARN  | w\u001b[0m',
-        '\u001b[32m2026-01-02 03:04:05.678 | OK    | s\u001b[0m',
-        '\u001b[97m2026-01-02 03:04:05.678 | INFO  | i\u001b[0m',
-        '\u001b[97m2026-01-02 03:04:05.678 | DEBUG | d\u001b[0m',
+        '\u001b[31m[2026-01-02 03:04:05] [File: logger.test.ts] [Function: testLog] | ERROR | e\u001b[0m',
+        '\u001b[38;5;208m[2026-01-02 03:04:05] [File: logger.test.ts] [Function: testLog] | WARN  | w\u001b[0m',
+        '\u001b[32m[2026-01-02 03:04:05] [File: logger.test.ts] [Function: testLog] | OK    | s\u001b[0m',
+        '\u001b[97m[2026-01-02 03:04:05] [File: logger.test.ts] [Function: testLog] | INFO  | i\u001b[0m',
+        '\u001b[97m[2026-01-02 03:04:05] [File: logger.test.ts] [Function: testLog] | DEBUG | d\u001b[0m',
       ]);
     });
 
@@ -17118,8 +17214,8 @@ describe('logger', () => {
       logger.info('a', { n: 1 });
       logger.warn('b');
       expect(out).toEqual([
-        `2026-01-02 03:04:05.678 | INFO  | ${'a'.padEnd(30)} | n=1`,
-        '2026-01-02 03:04:05.678 | WARN  | b',
+        `[2026-01-02 03:04:05] [File: logger.test.ts] [Function: testLog] | INFO  | ${'a'.padEnd(30)} | n=1`,
+        '[2026-01-02 03:04:05] [File: logger.test.ts] [Function: testLog] | WARN  | b',
       ]);
     });
 
@@ -17644,7 +17740,7 @@ fb485879141d978ad7d8ac189657040142c7bce6833b8aae4a3daaaaf8d6d72e  /.prettierigno
 f5124d407a2a28154fb5f73502a2be91f3250a74528e0f60f6e992952bf97599  /README.md
 e45631ace875215c4bf88078343496ecbc134766e6f5799a5f597d17e28d9526  /base/kustomization.yaml
 9e511161c65b1da987d899ef14b01a0c5a6cddc97acf5cc255c8c9154cd68efa  /base/sa.yaml
-79ed1ba3d92f2d9cef0891256a00d02eb8f690159e7a7fd04b7b951e9a19490c  /docs/API.md
+e76034fb7b6f7a3f19cc18ac60e7f1f327fbb31fe03fe64e871388a466a9c92b  /docs/API.md
 b3cc90e989119eb8a0e05bfe569b67c53e1b2424b695ddf05eff7403753f0556  /docs/CHECKLIST.md
 ee1d8bbc1d3223072c9384b63c3f31b363a6fe01c6a0404c57fb222b876fefed  /docs/PROJECT_RULES.md
 a3fe0f7e3f47b4f8c6e94e6918bf691c61dfd2efacc721dfb347c8fa7fbf146d  /eslint.config.js
@@ -17671,8 +17767,8 @@ b6da1a42d1d52318e947bf5a8913b224d939779ac556bcc08f56e77d1fb6cbaa  /src/config/en
 e82aeb2f9237c06123e92418ea19d05c2148deee0bc06c5cc8e19c7c5298acf1  /src/controllers/configurationController.ts
 d4606df5cbebc10f65e066e702211949c3dcf312d6ce809c3586d66c5e7c1052  /src/controllers/deploymentNamespaceController.ts
 1e2725b7f1f2efe84970eb7da5907cede0772009822b9ea12f3548a0c83b758d  /src/controllers/gitConfigController.ts
-a738fa62f4a0cf9befb4b87f6f211e152a733545ee5562fde456c5412f4febdb  /src/controllers/healthCheckController.ts
-1f38b0a0134b7ac06119e9443f0a9b573a4f12d4d249c22c25468a1851c58eef  /src/controllers/logController.ts
+9351c8be66b52bcb9f5263d11d306907f097ca19540fa99f4b4ad71134e9120b  /src/controllers/healthCheckController.ts
+0c4ebb0de251825c46fd29f6cde7a089be1acd95b1ea80792c23f05fe5ef656d  /src/controllers/logController.ts
 a4921931134df9dce3246c00bbbc13ef6e2abf7a7550ef858e35b2ae71f07db3  /src/controllers/namespaceController.ts
 76edab753bfd6e97a19fbe5f271cfb8a21103cc6d0985d217f04e57e80ccbca4  /src/controllers/patController.ts
 341984cd318d88cd40acf620bb5cec872017fd231fde48aa7cdb34cb36f4bb47  /src/controllers/projectController.ts
@@ -17683,7 +17779,7 @@ f03126ab4c50f543342e38fc0e7e33b100bbb4e4806bbe10f3f2a39bf027253e  /src/controlle
 23c430b0d1f1e0814a561a0462ef52ab13891de0d0d135e2dd24e3f6cb4281d7  /src/factories/log-factory.ts
 796c298f2b294a59d5f11b01a9c9215e2652cd5fda4c65f2b896401e14d49f55  /src/factories/workspace-factory.ts
 c27e108a0da906659e1ebb696ef82efa358a35ca12b8a6ca4868ae262ff017dc  /src/http/auth.ts
-81175f0d8599a983a6fd1048a9c1df7da44eaf9dd410a26fe788543bf8969ed3  /src/http/errors.ts
+fbdb0baf76700a6e3b14cf69d71f5e88cad420a238ed66864c85893ad7bc6232  /src/http/errors.ts
 fef9122818408b6e8794e6c85cb925d1ff1c92f006dd0fd72d48792f81b45187  /src/http/helpers.ts
 095483dd33b3e5bfeb087b80beca0cbfc0de083fb68ac73e0bca482c3e390f86  /src/http/schemas.ts
 18bd6f762160a37b78808536d4019673504f52e9c84311b8c5f13eef082aca3d  /src/index.ts
@@ -17719,8 +17815,8 @@ dd50f0091efbf5e9eb1be83bce5f6cea08234ff27d32ba71b6433f017b685e4e  /src/services/
 516bca774e1c5f52d9bf36c07aea3ffa12e8f87f99dc7073472aafe08144edd9  /src/types.ts
 3792b247eafaf5bffdcf19a1e1254aa8c7340546463c219841a8aa7f94a204cd  /src/utils/errors.ts
 34ecf9a94cb4e28680deacec7ce37e4a91c17d9b398740fc4da976d98af15b73  /src/utils/k8s-errors.ts
-877f4f9b7d36201480f2861129423ed585547539881a754c073b80f7bafe9154  /src/utils/log-format.ts
-c008ab7262f741ca8270771e1949c233c9e46cd0bee0c3686ee91d1db4c08bb0  /src/utils/logger.ts
+c9c8121b15fd933a1975b1a1cf148a560ecfacc2ded62b72a1067f01f3749d55  /src/utils/log-format.ts
+1ca5842eeeb14d0af12d464c8db2cfd7d64818c914e0458b44788d16ef8fc693  /src/utils/logger.ts
 3d3ad181f469b0865308ba44d013e43ac04a01135ef72f8411960b82486119f0  /src/utils/names.ts
 898b4319472cf934419b18203e470ee293d762ddb297fcf59a6baef9e62582e8  /src/utils/resources.ts
 03cfa76a81c0aff613c7525ca38a56a44c2fb08a4216b970cac957ee4c97f720  /src/utils/timestamp.ts
@@ -17735,7 +17831,7 @@ a4f031d7c675f1a39e6e26c7b830df9da2d996a54c55cdd0960ef4dd6976c2b2  /tests/helpers
 d520d83448dded07b8ef6f6300690caa1bb084c5ee2be10a9481d033945733f1  /tests/helpers/testkit.ts
 85000666509549a7556c7e0637f0c9178cecc087b85dd3a33a605906c9752559  /tests/integration/administration.test.ts
 8dd676eb7161f2989454e3a050c99449a200882ca9b2a12aad107ba1ba67c2d0  /tests/integration/auth-and-ops.test.ts
-432963007c7164199c1308e3f5a3ad43f25084efa1563c9706f8a10f52369f2e  /tests/integration/deploy-cluster.test.ts
+361dcafa1ca92d282c56fc6a523f1dbb847f713ad52ec511363fef0194c13232  /tests/integration/deploy-cluster.test.ts
 5bfd52ea311b2253408a7e23ffc5a5ba62a13da946f91b33219741e841b0c191  /tests/integration/hand-over-sh.test.ts
 4c69d017000fcd7185d24bd7d88e4b45a03dd4f8d88bc8002b9a2ce301ad1c74  /tests/integration/metrics-db-and-wiring.test.ts
 980163d4832696dc5119dcf8dd934577788c2ba38525b3e302972f2efceefddc  /tests/integration/pats-gitconfig-deployments.test.ts
@@ -17758,8 +17854,8 @@ a9c2b2141163d299681d6350a45906c4a5c46799d68105db157459c68b95d829  /tests/unit/se
 9087310eaf55de4fd971bb4e6a0b2a3c4e6a1d95aceb5da4af7d82062a69328c  /tests/unit/services/WorkspaceService.test.ts
 48c61224bb6b3e41ac74031669636a3db321fdb71bc15bbadc2a65542d562a95  /tests/unit/utils/daily-logs.test.ts
 0f0e01f4eecb7cbf5940517d9b632ea33085b18da8e4f62105889ff05d805e00  /tests/unit/utils/k8s-errors.test.ts
-f62fcb3efc5216fdce416699925506b3a2b79c4d586fe3bcf73ffbc331445d47  /tests/unit/utils/log-format.test.ts
-7aa7a2acb960aa640492e89a9e84b2c9366054a6d9789aba704c90ca1316fc5e  /tests/unit/utils/logger.test.ts
+6ecec4c68ef26c1b04ea3393f28aa01f0595b620042c0aa57b3cc98a6f27d364  /tests/unit/utils/log-format.test.ts
+cb74f81e48f39a0788bb3f73a763f3e26d6e774f8cbdef748039751af36b367f  /tests/unit/utils/logger.test.ts
 e747b4c4cedd983ac77e865c24d2acff9401ac10e609722d14797e9f763f556a  /tests/unit/utils/names.test.ts
 d3a5b800f3f52756636fb2d1134bacb2cff3dba8cac667f05920f5d8d9ec0e54  /tests/unit/utils/resources.test.ts
 88754b9e0be5237e97d5ad84c391af418eac6b6d3d16a0e986f0341bf82dc1c4  /tests/unit/utils/timestamp.test.ts

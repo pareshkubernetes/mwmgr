@@ -27,8 +27,7 @@ export function createErrorHandler(logger: Logger): ErrorRequestHandler {
     const requestId = res.locals.requestId as string | undefined;
 
     if (err instanceof AppError) {
-      if (err.status >= 500)
-        logger.error('request.failed', { requestId, code: err.code, error: err.message });
+      if (err.status >= 500) logger.error('request.failed', { requestId, code: err.code, error: err });
       res.status(err.status).json(errorBody(err.message, err.code));
       return;
     }
@@ -43,7 +42,11 @@ export function createErrorHandler(logger: Logger): ErrorRequestHandler {
       return;
     }
     // Never leak internals for unexpected errors.
-    logger.error('request.crashed', { requestId, path: req.path, error: errorMessage(err) });
+    logger.error('request.crashed', {
+      requestId,
+      path: req.path,
+      error: err instanceof Error ? err : errorMessage(err),
+    });
     res.status(500).json(errorBody('Internal server error', 'INTERNAL_ERROR'));
   };
 }

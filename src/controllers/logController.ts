@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { queryLogs } from '../config/daily-logs.js';
+import { formatPretty } from '../utils/log-format.js';
 import { asyncHandler } from '../http/errors.js';
 import { parse } from '../http/schemas.js';
 
@@ -18,17 +19,22 @@ export function logController() {
       const options = parse(query, req.query);
       const result = await queryLogs(options);
       if (options.format === 'text') {
-        res
-          .type('text')
-          .send(
-            [
-              `Application logs | ${result.from} to ${result.to} | ${result.entries.length} entries | truncated: ${result.truncated}`,
-              ...result.entries.map(
-                ({ time, level, event, ...fields }) =>
-                  `${String(time)} ${String(level).toUpperCase()} ${String(event)} ${JSON.stringify(fields)}`,
+        res.type('text').send(
+          [
+            `Application logs | ${result.from} to ${result.to} | ${result.entries.length} entries | truncated: ${result.truncated}`,
+            ...result.entries.map(({ time, level, event, timestamp: _timestamp, ...fields }) =>
+              formatPretty(
+                {
+                  time: new Date(String(time)),
+                  kind: level === 'error' || level === 'warn' || level === 'debug' ? level : 'info',
+                  event: String(event),
+                  fields,
+                },
+                false,
               ),
-            ].join('\n'),
-          );
+            ),
+          ].join('\n'),
+        );
       } else res.json(result);
     }),
   };

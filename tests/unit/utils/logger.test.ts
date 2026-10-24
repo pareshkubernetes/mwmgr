@@ -7,6 +7,28 @@ function capture(level: Parameters<typeof createLogger>[0] = 'info') {
 }
 
 describe('logger', () => {
+  it('records the calling file and function with a seconds-resolution timestamp', () => {
+    const { lines, logger } = capture();
+    function recordEvent() {
+      logger.info('source.test');
+    }
+    recordEvent();
+    expect(lines[0]).toMatchObject({ file: 'logger.test.ts', function: 'recordEvent' });
+    expect(lines[0]?.timestamp).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+  });
+  it('uses an error stack to identify its original file and function', () => {
+    const { lines, logger } = capture();
+    const error = new Error('creation failed');
+    error.stack =
+      'Error: creation failed\n    at NamespaceService.ensure (C:\\app\\src\\services\\NamespaceService.ts:42:10)';
+    logger.error('namespace.failed', { error });
+    expect(lines[0]).toMatchObject({
+      file: 'NamespaceService.ts',
+      function: 'NamespaceService.ensure',
+      error: 'creation failed',
+    });
+    expect(JSON.stringify(lines[0])).not.toContain('C:\\app');
+  });
   it('writes one JSON line with level, event and fields', () => {
     const { lines, logger } = capture();
     logger.info('hello', { a: 1 });
@@ -75,7 +97,15 @@ describe('logger', () => {
     const now = () => new Date(2026, 0, 2, 3, 4, 5, 678);
     const pretty = (level: Parameters<typeof createLogger>[0] = 'info', color = true) => {
       const out: string[] = [];
-      return { out, logger: createLogger(level, (l) => out.push(l), {}, { format: 'pretty', color, now }) };
+      return {
+        out,
+        logger: createLogger(
+          level,
+          (l) => out.push(l),
+          {},
+          { format: 'pretty', color, now, source: { file: 'logger.test.ts', function: 'testLog' } },
+        ),
+      };
     };
 
     it('paints each kind in its colour: error red, warn orange, success green, info and debug white', () => {
@@ -86,11 +116,11 @@ describe('logger', () => {
       logger.info('i');
       logger.debug('d');
       expect(out).toEqual([
-        '\u001b[31m2026-01-02 03:04:05.678 | ERROR | e\u001b[0m',
-        '\u001b[38;5;208m2026-01-02 03:04:05.678 | WARN  | w\u001b[0m',
-        '\u001b[32m2026-01-02 03:04:05.678 | OK    | s\u001b[0m',
-        '\u001b[97m2026-01-02 03:04:05.678 | INFO  | i\u001b[0m',
-        '\u001b[97m2026-01-02 03:04:05.678 | DEBUG | d\u001b[0m',
+        '\u001b[31m[2026-01-02 03:04:05] [File: logger.test.ts] [Function: testLog] | ERROR | e\u001b[0m',
+        '\u001b[38;5;208m[2026-01-02 03:04:05] [File: logger.test.ts] [Function: testLog] | WARN  | w\u001b[0m',
+        '\u001b[32m[2026-01-02 03:04:05] [File: logger.test.ts] [Function: testLog] | OK    | s\u001b[0m',
+        '\u001b[97m[2026-01-02 03:04:05] [File: logger.test.ts] [Function: testLog] | INFO  | i\u001b[0m',
+        '\u001b[97m[2026-01-02 03:04:05] [File: logger.test.ts] [Function: testLog] | DEBUG | d\u001b[0m',
       ]);
     });
 
@@ -99,8 +129,8 @@ describe('logger', () => {
       logger.info('a', { n: 1 });
       logger.warn('b');
       expect(out).toEqual([
-        `2026-01-02 03:04:05.678 | INFO  | ${'a'.padEnd(30)} | n=1`,
-        '2026-01-02 03:04:05.678 | WARN  | b',
+        `[2026-01-02 03:04:05] [File: logger.test.ts] [Function: testLog] | INFO  | ${'a'.padEnd(30)} | n=1`,
+        '[2026-01-02 03:04:05] [File: logger.test.ts] [Function: testLog] | WARN  | b',
       ]);
     });
 
