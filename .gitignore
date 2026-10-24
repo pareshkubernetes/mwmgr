@@ -5,5 +5,4 @@ coverage/
 .env.*
 !.env.example
 *.log
-all-app-code.txt
 .handover-state*
