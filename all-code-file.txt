@@ -1,10 +1,10 @@
 #### WORKSPACE-MGR ALL-CODE-FILE v1
-#### generated: 2026-10-24T03:32:26Z
-#### token: ba546fc64dce1166e094386e
+#### generated: 2026-10-24T03:51:04Z
+#### token: 2b1f0a53b79c3c16389504f6
 #### files: 101
 #### rebuild the app with: bash unpack.sh all-code-file.txt [-o DIR] [--force]
 
-@@@FILE@ba546fc64dce1166e094386e text nl 451c8df0370656733871d9391af03e3c0a1fb419aada7d102caf78a2b72df602 .dockerignore
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 451c8df0370656733871d9391af03e3c0a1fb419aada7d102caf78a2b72df602 .dockerignore
 node_modules
 dist
 coverage
@@ -18,8 +18,8 @@ overlays
 tests
 .git
 .env
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl b8863e0223651adc472f360e4a95674e209e799ed25e75676e83ae199574671d .env.example
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl b8863e0223651adc472f360e4a95674e209e799ed25e75676e83ae199574671d .env.example
 # ---- HTTP ----
 PORT=3050
 NODE_ENV=development
@@ -90,12 +90,12 @@ USER_DIRECTORY_GRAPHQL_URL=
 GITHUB_URL=https://github.com
 # Appended to the soeid to form the git username, e.g. _citi → pp58386_citi (empty = soeid only)
 GITHUB_USER_SUFFIX=
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 73943ed2c38c83a50418a3a4f567516db53610201861acfb382fa128f01c02ea .gitattributes
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 73943ed2c38c83a50418a3a4f567516db53610201861acfb382fa128f01c02ea .gitattributes
 # Shell scripts must keep LF line endings, or bash fails with "$'\r': command not found" on Windows checkouts.
 *.sh text eol=lf
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 1b7d0792a16a7c2ef00c25e5463187c5c678092b18e2b7a0fbf885aacf89e667 .gitignore
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 1b7d0792a16a7c2ef00c25e5463187c5c678092b18e2b7a0fbf885aacf89e667 .gitignore
 node_modules/
 dist/
 coverage/
@@ -104,8 +104,8 @@ coverage/
 !.env.example
 *.log
 *.bundle.txt
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 4f6b4dc95f090d054c4fc40378c5f528e857d620f1d7c825d0a69b8c230ccf36 .prettierignore
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 4f6b4dc95f090d054c4fc40378c5f528e857d620f1d7c825d0a69b8c230ccf36 .prettierignore
 dist
 coverage
 legacy
@@ -117,16 +117,16 @@ base
 overlays
 package-lock.json
 *.bundle.txt
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 5e933468359d89fe1949cc85fa94fd01850f58a978d97e527e131502666fff94 .prettierrc.json
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 5e933468359d89fe1949cc85fa94fd01850f58a978d97e527e131502666fff94 .prettierrc.json
 {
   "singleQuote": true,
   "semi": true,
   "printWidth": 110,
   "trailingComma": "all"
 }
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl f65c8101a53b4b5e1def51ca4afb40a7059b21d086cf2942b0a27912d1075162 Dockerfile
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl f65c8101a53b4b5e1def51ca4afb40a7059b21d086cf2942b0a27912d1075162 Dockerfile
 FROM node:22-alpine AS build
 WORKDIR /app
 COPY package*.json ./
@@ -146,8 +146,8 @@ COPY package.json ./
 USER 1001
 EXPOSE 3050
 CMD ["node", "dist/index.js"]
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 53088e95d2b7bcd48d4abbec8ec7f8a0377f5b7ee3b7f65ee77866e945f5585f README.md
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 53088e95d2b7bcd48d4abbec8ec7f8a0377f5b7ee3b7f65ee77866e945f5585f README.md
 # Workspace Mgr
 
 Middleware between the **Orion** dashboard and **Red Hat OpenShift Dev Spaces**. On demand of a user it
@@ -343,15 +343,15 @@ OpenShift cluster metrics, the dashboard aggregation tables/queries (`prompt/*.m
 - No run against a real OpenShift cluster, real Postgres, or the real devfile registry/mail/GraphQL services.
 - `docker build` was not run. The Helm chart (`helm/`) has no Deployment template and its folder is named
   `template`, not `templates`; it was left unchanged.
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nonl e45631ace875215c4bf88078343496ecbc134766e6f5799a5f597d17e28d9526 base/kustomization.yaml
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nonl e45631ace875215c4bf88078343496ecbc134766e6f5799a5f597d17e28d9526 base/kustomization.yaml
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: kustomization
 namespace: openshift-devspaces
 resources:
  - sa.yaml
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nonl 9e511161c65b1da987d899ef14b01a0c5a6cddc97acf5cc255c8c9154cd68efa base/sa.yaml
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nonl 9e511161c65b1da987d899ef14b01a0c5a6cddc97acf5cc255c8c9154cd68efa base/sa.yaml
 apiVersion: v1
 kind: List
 items:
@@ -384,8 +384,8 @@ items:
       subjects:
       - kind: ServiceAccount
         name: workspace-mgr
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 2ef6770acefd4dcccee78b8fbefb328b4f8d3b61d5c780ccc0c009dec49969e3 docs/CHECKLIST.md
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 2ef6770acefd4dcccee78b8fbefb328b4f8d3b61d5c780ccc0c009dec49969e3 docs/CHECKLIST.md
 # Workspace Mgr — Build & Review Checklist
 
 Tick items as they are completed. Items map to [PROJECT_RULES.md](./PROJECT_RULES.md).
@@ -467,8 +467,8 @@ Tick items as they are completed. Items map to [PROJECT_RULES.md](./PROJECT_RULE
 - [x] README documents routes, env vars, assumptions, open questions
 - [ ] Helm/kustomize reviewed against port (3050) and env vars — _chart has no Deployment template; left unchanged_
 - [ ] Smoke test against a real dev OpenShift cluster, Postgres and devfile registry — _not possible from here_
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 368130c7b1df931def4df1ca3d4006fc6606afc9ba49d747a1aa607fe4495fc8 docs/PROJECT_RULES.md
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 368130c7b1df931def4df1ca3d4006fc6606afc9ba49d747a1aa607fe4495fc8 docs/PROJECT_RULES.md
 # Workspace Mgr — Project Rules
 
 Workspace Mgr is the backend/middleware between the Orion dashboard and OpenShift
@@ -604,8 +604,8 @@ These rules are binding for every change. If a rule must be broken, say why in t
 1. Small, focused commits; imperative subject line.
 2. CI order: `typecheck` → `lint` → `test:unit` → `test:integration` → `test:e2e` → `build`.
 3. A PR is mergeable only when the [CHECKLIST](./CHECKLIST.md) items for its scope are ticked.
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl fa1ba69e87222ea79d0bbf95dd0bbf40ab81204e16b92c0a4600c956781e7532 eslint.config.js
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl fa1ba69e87222ea79d0bbf95dd0bbf40ab81204e16b92c0a4600c956781e7532 eslint.config.js
 import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 
@@ -637,15 +637,15 @@ export default tseslint.config(
     rules: { 'no-console': 'off' },
   },
 );
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nonl 94d51b2e9fd041f54acda08e3b59a124a5ee8332105ceb5a4efd259dcccc0092 helm/Chart.yaml
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nonl 94d51b2e9fd041f54acda08e3b59a124a5ee8332105ceb5a4efd259dcccc0092 helm/Chart.yaml
 apiVersion: v2
 description: A helm chart for workspace manager.
 type: application
 version: 0.1.0
 appVersion: 1.0.0
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 4e30e1097ac0cab63771f05e5122a7881350a285d982cb221d8f13ba92622be4 helm/dev-values.yaml
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 4e30e1097ac0cab63771f05e5122a7881350a285d982cb221d8f13ba92622be4 helm/dev-values.yaml
 chart: 
   name: "177398-workspace-mgr"
   version: "0.1.0"
@@ -671,8 +671,8 @@ route:
   
 name: "workspace-mgr"
 namespace: "cti-svcs-orion-177398"
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nonl 83e994e660df67ee3a3373e57d6a7de4e1902ea45df60d3a1351b95053a8729b helm/template/route.yaml
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nonl 83e994e660df67ee3a3373e57d6a7de4e1902ea45df60d3a1351b95053a8729b helm/template/route.yaml
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
@@ -689,8 +689,8 @@ spec:
   wildcardPolicy: {{ .Values.wildcardPolicy }}
 
   
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 4f9643b22893c8bf56325cbfde49c11d0477fb7fde7f7835375bbb5129824bea helm/template/service.yaml
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 4f9643b22893c8bf56325cbfde49c11d0477fb7fde7f7835375bbb5129824bea helm/template/service.yaml
 apiVersion: v1
 kind: Service
 metadata:
@@ -702,18 +702,18 @@ spec:
   ports:
   - port: {{ .Values.service.port }}
     targetPort: {{ .Values.service.port | default .Values.service.port }}
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl f64dc14004fedd5e8bf6afd0664904eaaa5a68a3f2fef88987f284c4254b0512 helm/values.yaml
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl f64dc14004fedd5e8bf6afd0664904eaaa5a68a3f2fef88987f284c4254b0512 helm/values.yaml
 isImageBase: LS_IMAGE_BASE
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nonl e45631ace875215c4bf88078343496ecbc134766e6f5799a5f597d17e28d9526 kustomize.server/base/kustomization.yaml
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nonl e45631ace875215c4bf88078343496ecbc134766e6f5799a5f597d17e28d9526 kustomize.server/base/kustomization.yaml
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: kustomization
 namespace: openshift-devspaces
 resources:
  - sa.yaml
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nonl 9e511161c65b1da987d899ef14b01a0c5a6cddc97acf5cc255c8c9154cd68efa kustomize.server/base/sa.yaml
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nonl 9e511161c65b1da987d899ef14b01a0c5a6cddc97acf5cc255c8c9154cd68efa kustomize.server/base/sa.yaml
 apiVersion: v1
 kind: List
 items:
@@ -746,24 +746,24 @@ items:
       subjects:
       - kind: ServiceAccount
         name: workspace-mgr
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nonl 3a978a220b7028846ac50af4a11d83a46bd4f286f30822f95f48e01ebeecdfdc kustomize.server/overlays/12d/kustomization.yaml
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nonl 3a978a220b7028846ac50af4a11d83a46bd4f286f30822f95f48e01ebeecdfdc kustomize.server/overlays/12d/kustomization.yaml
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: workspace-mgr
 bases: 
  - ../../base
  
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nonl 3a978a220b7028846ac50af4a11d83a46bd4f286f30822f95f48e01ebeecdfdc overlays/12d/kustomization.yaml
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nonl 3a978a220b7028846ac50af4a11d83a46bd4f286f30822f95f48e01ebeecdfdc overlays/12d/kustomization.yaml
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: workspace-mgr
 bases: 
  - ../../base
  
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 090c1f2f6269b5e30e9753cfbdbee6d9b8a5bd616200204047e891704c446415 pack.sh
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 090c1f2f6269b5e30e9753cfbdbee6d9b8a5bd616200204047e891704c446415 pack.sh
 #!/usr/bin/env bash
 # Pack every file needed to run, build and test workspace-mgr into ONE text file.
 # Rebuild the app from that file with:  bash unpack.sh all-code-file.txt
@@ -884,8 +884,8 @@ mv "$TMP" "$OUT"
 trap - EXIT
 bytes="$(wc -c < "$OUT" | tr -d ' ')"
 echo "Packed ${#FILES[@]} file(s), $((bytes / 1024)) KiB -> $OUT"
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl e644061f3c6418d0b2f1f25f8ae517ceb5b6d80d598add3537eb4c2e7bf8082c package-lock.json
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl e644061f3c6418d0b2f1f25f8ae517ceb5b6d80d598add3537eb4c2e7bf8082c package-lock.json
 {
   "name": "workspace-mgr",
   "version": "1.0.0",
@@ -6505,8 +6505,8 @@ echo "Packed ${#FILES[@]} file(s), $((bytes / 1024)) KiB -> $OUT"
     }
   }
 }
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 6c6e056d02fb095f17f6806ab88edebcd9fe81e38c7ef56eca34effe9a00948b package.json
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 6c6e056d02fb095f17f6806ab88edebcd9fe81e38c7ef56eca34effe9a00948b package.json
 {
   "name": "workspace-mgr",
   "version": "1.0.0",
@@ -6560,8 +6560,8 @@ echo "Packed ${#FILES[@]} file(s), $((bytes / 1024)) KiB -> $OUT"
     "vitest": "^5.0.5"
   }
 }
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 3e8b33a1cbb8ca1170086af7125ae0cfa50da440469799c3c5a111ca8a5d4105 scripts/bundle.mjs
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 3e8b33a1cbb8ca1170086af7125ae0cfa50da440469799c3c5a111ca8a5d4105 scripts/bundle.mjs
 #!/usr/bin/env node
 // Collect the project's files into ONE text file that scripts/restore.mjs can turn back into the same files.
 //
@@ -6700,8 +6700,8 @@ try {
   process.stderr.write(`bundle: ${error.message}\n`);
   process.exitCode = 1;
 }
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 1c1bea820a25b36d8ba21ca150f3d5387a772a42f594f4d9ae8b6e76aae5a09c scripts/lib/bundle-format.d.mts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 1c1bea820a25b36d8ba21ca150f3d5387a772a42f594f4d9ae8b6e76aae5a09c scripts/lib/bundle-format.d.mts
 export const BUNDLE_MAGIC: string;
 export function sha256(buffer: Buffer): string;
 export function isTextBuffer(buffer: Buffer): boolean;
@@ -6715,8 +6715,8 @@ export function parseBundle(text: string): {
   meta: { generated: string; files: number; note?: string; lineEndingsRepaired?: boolean };
   files: { path: string; enc: string; content: Buffer; sha256: string }[];
 };
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 959329f0b11e8e6352bb66d361d07d5895517d02c1bf498c65515f1b57892a88 scripts/lib/bundle-format.mjs
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 959329f0b11e8e6352bb66d361d07d5895517d02c1bf498c65515f1b57892a88 scripts/lib/bundle-format.mjs
 // Shared by scripts/bundle.mjs and scripts/restore.mjs.
 //
 // A bundle is ONE text file holding many files, designed to survive copy/paste, email and chat tools:
@@ -6910,8 +6910,8 @@ function parseStrict(text) {
   }
   return { meta: { generated: field('generated') ?? '', files: declared, note: field('note') }, files };
 }
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 33572740d68ea3489966b5d63a7d2f2d3ea478da956bfe3cba0ec77eeec55743 scripts/restore.mjs
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 33572740d68ea3489966b5d63a7d2f2d3ea478da956bfe3cba0ec77eeec55743 scripts/restore.mjs
 #!/usr/bin/env node
 // Recreate the files stored in a bundle produced by scripts/bundle.mjs.
 //
@@ -7017,8 +7017,8 @@ try {
   process.stderr.write(`restore: ${error.message}\n`);
   process.exitCode = 1;
 }
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl a9ee0738b50d7c0620dc568b71624ed5fbb44ff5146b1418653e2e5127611027 src/config/env.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl a9ee0738b50d7c0620dc568b71624ed5fbb44ff5146b1418653e2e5127611027 src/config/env.ts
 import { z } from 'zod';
 
 const flag = (def: 'true' | 'false' = 'false') =>
@@ -7199,8 +7199,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     github: { url: e.GITHUB_URL.replace(/\/$/, ''), userSuffix: e.GITHUB_USER_SUFFIX },
   };
 }
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl f8c8fab7846346e6eb7f1683f884100c8fcb9e8827a5527340cc5fc6d0a34d61 src/constants/kubernetes-configs.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl f8c8fab7846346e6eb7f1683f884100c8fcb9e8827a5527340cc5fc6d0a34d61 src/constants/kubernetes-configs.ts
 import type { KubeObject } from '../domain/types.js';
 
 export const LABEL_COMPONENT = 'app.kubernetes.io/component';
@@ -7387,8 +7387,8 @@ export const DEPLOYER_ROLE_CONFIG: KubeObject = {
     { apiGroups: ['route.openshift.io'], resources: ['routes'], verbs: ALL_VERBS },
   ],
 };
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl b65316f525a02755343ea9b1b4ed25d0836a55d1f7ab419052b7090a9305d65f src/container.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl b65316f525a02755343ea9b1b4ed25d0836a55d1f7ab419052b7090a9305d65f src/container.ts
 import type { AppConfig } from './config/env.js';
 import { MetricsRepository, NoopMetricsStore, createPgPool } from './infra/db/MetricsRepository.js';
 import { DevfileRegistryClient, createRegistryHttp } from './infra/devreg/DevfileRegistryClient.js';
@@ -7492,8 +7492,8 @@ export function createProductionDependencies(config: AppConfig, logger: Logger):
       : new NoopNotifier(),
   };
 }
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 516bca774e1c5f52d9bf36c07aea3ffa12e8f87f99dc7073472aafe08144edd9 src/domain/types.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 516bca774e1c5f52d9bf36c07aea3ffa12e8f87f99dc7073472aafe08144edd9 src/domain/types.ts
 export type EditorKey = 'vscode' | 'intellij' | 'goland';
 
 export type EventType = 'create' | 'delete' | 'start' | 'stop' | 'update' | 'view';
@@ -7654,8 +7654,8 @@ export interface CatalogEntry {
   versions?: CatalogVersion[];
   [key: string]: unknown;
 }
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 4223cc814ef9cda93ace9dbd33d088c2a1aa89085c0be108d040a79901d89eea src/factories/devfile-updater.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 4223cc814ef9cda93ace9dbd33d088c2a1aa89085c0be108d040a79901d89eea src/factories/devfile-updater.ts
 import { dump, load } from 'js-yaml';
 import type { Devfile, EditorKey } from '../domain/types.js';
 import { BadRequestError } from '../utils/errors.js';
@@ -7760,8 +7760,8 @@ export function applyEditorProfile(
 export function updateDevfileYaml(yamlText: string, editor: EditorKey): string {
   return dump(applyEditorProfile(parseDevfile(yamlText), editor), { indent: 2 });
 }
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl c1ff8c64fbe1ec810e0311ad0f54a6838b266a250ec4d7af2121a401039a03a4 src/factories/log-factory.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl c1ff8c64fbe1ec810e0311ad0f54a6838b266a250ec4d7af2121a401039a03a4 src/factories/log-factory.ts
 import type { MetricsRecord } from '../domain/types.js';
 
 export type MetricsInput = Pick<MetricsRecord, 'soeid' | 'eventtype' | 'resourcetype'> &
@@ -7788,8 +7788,8 @@ export function buildLogRecord(data: MetricsInput, now: Date = new Date()): Metr
     editorname: data.editorname ?? '',
   };
 }
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 68e5bbc464e816685e318623188faefa7bd97cf0577a5bdbdaf061c70945af24 src/factories/workspace-factory.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 68e5bbc464e816685e318623188faefa7bd97cf0577a5bdbdaf061c70945af24 src/factories/workspace-factory.ts
 import type { Devfile, DevWorkspaceResource, EditorKey } from '../domain/types.js';
 
 export const WORKSPACE_LABELS = {
@@ -7887,8 +7887,8 @@ export function buildDevWorkspaceObject(a: BuildWorkspaceArgs): DevWorkspaceReso
     },
   };
 }
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 45b9c5fffe345d409bc3da27ac99c2b5d0bc2d771aced37388f922cd953b3218 src/http/app.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 45b9c5fffe345d409bc3da27ac99c2b5d0bc2d771aced37388f922cd953b3218 src/http/app.ts
 import { randomUUID } from 'node:crypto';
 import express, { Router, type Express, type Request, type RequestHandler, type Response } from 'express';
 import type { Container } from '../container.js';
@@ -8177,8 +8177,8 @@ export function createApp(c: Container): Express {
 }
 
 export { errorBody };
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl a72df90092a3b730385a4efb584ba916fb2bf23497b97eb4a9f6b15276b07bbe src/http/auth.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl a72df90092a3b730385a4efb584ba916fb2bf23497b97eb4a9f6b15276b07bbe src/http/auth.ts
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import jwt from 'jsonwebtoken';
@@ -8250,8 +8250,8 @@ export function authorizeSoeid(): RequestHandler {
 }
 
 export const getSoeid = (res: Response): string => res.locals.soeid as string;
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 81175f0d8599a983a6fd1048a9c1df7da44eaf9dd410a26fe788543bf8969ed3 src/http/errors.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 81175f0d8599a983a6fd1048a9c1df7da44eaf9dd410a26fe788543bf8969ed3 src/http/errors.ts
 import type { ErrorRequestHandler, NextFunction, Request, RequestHandler, Response } from 'express';
 import { AppError, errorMessage } from '../utils/errors.js';
 import type { Logger } from '../utils/logger.js';
@@ -8301,8 +8301,8 @@ export function createErrorHandler(logger: Logger): ErrorRequestHandler {
     res.status(500).json(errorBody('Internal server error', 'INTERNAL_ERROR'));
   };
 }
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 095483dd33b3e5bfeb087b80beca0cbfc0de083fb68ac73e0bca482c3e390f86 src/http/schemas.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 095483dd33b3e5bfeb087b80beca0cbfc0de083fb68ac73e0bca482c3e390f86 src/http/schemas.ts
 import { z } from 'zod';
 import { BadRequestError } from '../utils/errors.js';
 
@@ -8344,8 +8344,8 @@ export function parse<T extends z.ZodType>(schema: T, data: unknown): z.output<T
   }
   return result.data;
 }
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 28ddf1c1bfbebc746c58bfeb5f727524a9de7cc596007460d01ef607c433b816 src/index.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 28ddf1c1bfbebc746c58bfeb5f727524a9de7cc596007460d01ef607c433b816 src/index.ts
 import type { Server } from 'node:http';
 import { loadConfig } from './config/env.js';
 import { buildContainer, createProductionDependencies } from './container.js';
@@ -8379,8 +8379,8 @@ main().catch((error: unknown) => {
   process.stderr.write(`Fatal: ${errorMessage(error)}\n`);
   process.exit(1);
 });
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 5e7d858e09542cd3b1764ea68c52574667ef7879e4732ae2078b4bb6a79bee56 src/infra/db/MetricsRepository.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 5e7d858e09542cd3b1764ea68c52574667ef7879e4732ae2078b4bb6a79bee56 src/infra/db/MetricsRepository.ts
 import pg from 'pg';
 import type { AppConfig } from '../../config/env.js';
 import type { MetricsRecord } from '../../domain/types.js';
@@ -8554,8 +8554,8 @@ export class NoopMetricsStore implements MetricsStore {
   async ping(): Promise<void> {}
   async close(): Promise<void> {}
 }
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 1578559fcf5b368425e1057050783dcf66672c9df5b1f3241945ffa3bc495b96 src/infra/db/pg-ssl.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 1578559fcf5b368425e1057050783dcf66672c9df5b1f3241945ffa3bc495b96 src/infra/db/pg-ssl.ts
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { ConnectionOptions } from 'node:tls';
@@ -8613,8 +8613,8 @@ export function buildSslOptions(
     ? { rejectUnauthorized: true, checkServerIdentity: () => undefined, ca }
     : { rejectUnauthorized: true, ca };
 }
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 1bf9d87822afedca45dd73f4f522977690b61f453d20140ce38e09f4beab8115 src/infra/devreg/DevfileRegistryClient.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 1bf9d87822afedca45dd73f4f522977690b61f453d20140ce38e09f4beab8115 src/infra/devreg/DevfileRegistryClient.ts
 import axios, { type AxiosInstance } from 'axios';
 import type { CatalogEntry } from '../../domain/types.js';
 import { UpstreamError, WorkspaceConfigNotFoundError } from '../../utils/errors.js';
@@ -8664,8 +8664,8 @@ export class DevfileRegistryClient implements DevfileRegistry {
     }
   }
 }
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 6c28756cf039dfa360fda7b9a90ff0979f58fbf92826d90c0c8a2441adc9b18e src/infra/email/EmailNotifier.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 6c28756cf039dfa360fda7b9a90ff0979f58fbf92826d90c0c8a2441adc9b18e src/infra/email/EmailNotifier.ts
 import type { AppConfig } from '../../config/env.js';
 import { errorMessage } from '../../utils/errors.js';
 import { silentLogger, type Logger } from '../../utils/logger.js';
@@ -8776,8 +8776,8 @@ export class NoopNotifier implements Notifier {
   async namespaceAlreadyExists(): Promise<void> {}
   async namespacesDeleted(): Promise<void> {}
 }
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl d5ffe80f059a28eb9af910ed64c749016ea125a352c889f6f4a1fe55da7190da src/infra/email/GraphqlUserDirectory.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl d5ffe80f059a28eb9af910ed64c749016ea125a352c889f6f4a1fe55da7190da src/infra/email/GraphqlUserDirectory.ts
 import { errorMessage } from '../../utils/errors.js';
 import { silentLogger, type Logger } from '../../utils/logger.js';
 import type { UserDirectory } from '../ports.js';
@@ -8815,8 +8815,8 @@ export class NullUserDirectory implements UserDirectory {
     return undefined;
   }
 }
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 1044ec59c17b9cdb7b503e157a127a47a86ceb9ff9ebedb7329da5d9c1661f9c src/infra/email/email-templates.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 1044ec59c17b9cdb7b503e157a127a47a86ceb9ff9ebedb7329da5d9c1661f9c src/infra/email/email-templates.ts
 export const escapeHtml = (value: string): string =>
   value
     .replace(/&/g, '&amp;')
@@ -8929,8 +8929,8 @@ export function deletedNamespacesEmailBody(args: {
     args.recipient,
   );
 }
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 66f40ef444dfc246220bb1105e4e3f664711168370d61a6ff075192cab1cee71 src/infra/kube/KubeClient.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 66f40ef444dfc246220bb1105e4e3f664711168370d61a6ff075192cab1cee71 src/infra/kube/KubeClient.ts
 import {
   CoreV1Api,
   KubeConfig,
@@ -9118,8 +9118,8 @@ export class KubeClient implements KubeGateway {
     await this.call('Kubernetes API ping', () => this.core.getAPIResources());
   }
 }
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 61cefd068b5d19b2f58cf205c42c9773f73161f18379ed1191a0c943275de266 src/infra/ports.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 61cefd068b5d19b2f58cf205c42c9773f73161f18379ed1191a0c943275de266 src/infra/ports.ts
 import type { CatalogEntry, DevWorkspaceResource, KubeObject, MetricsRecord } from '../domain/types.js';
 
 export type NamespacedKind =
@@ -9201,8 +9201,8 @@ export const systemClock: Clock = {
   now: () => new Date(),
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 };
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 3ddf77f2558b484ec3f18c145c1a318a08fb8b773273b5ac9df92e0e7ee0c549 src/services/DeploymentNamespaceService.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 3ddf77f2558b484ec3f18c145c1a318a08fb8b773273b5ac9df92e0e7ee0c549 src/services/DeploymentNamespaceService.ts
 import {
   ANNOTATION_CHE_USERNAME,
   BUILDER_ROLE_CONFIG,
@@ -9358,8 +9358,8 @@ export class DeploymentNamespaceService {
     return { exists: deleted.length > 0, deleted, failed, message: parts.join('. ') };
   }
 }
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 7cbabc96bb4570447255df967bc6aa166a12435f2eac930d627913bfd0a6ec82 src/services/GitConfigService.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 7cbabc96bb4570447255df967bc6aa166a12435f2eac930d627913bfd0a6ec82 src/services/GitConfigService.ts
 import type { KubeObject } from '../domain/types.js';
 import type { KubeGateway } from '../infra/ports.js';
 import { BadRequestError, NotFoundError } from '../utils/errors.js';
@@ -9440,8 +9440,8 @@ export class GitConfigService {
     );
   }
 }
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl abbd2201b0851ea4db5801c6909b953da56d15dfd2d716c4a0c52ed010225b10 src/services/MetricsRecorder.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl abbd2201b0851ea4db5801c6909b953da56d15dfd2d716c4a0c52ed010225b10 src/services/MetricsRecorder.ts
 import { buildLogRecord, type MetricsInput } from '../factories/log-factory.js';
 import type { MetricsRecord } from '../domain/types.js';
 import { systemClock, type Clock, type MetricsStore } from '../infra/ports.js';
@@ -9504,8 +9504,8 @@ export class MetricsRecorder {
     return result;
   }
 }
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 7695b3705491084f684544c57e7627752ccdeae7dfae47e2e70fd1445ef5be63 src/services/NamespaceService.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 7695b3705491084f684544c57e7627752ccdeae7dfae47e2e70fd1445ef5be63 src/services/NamespaceService.ts
 import {
   ANNOTATION_CHE_USERNAME,
   LABEL_COMPONENT,
@@ -9707,8 +9707,8 @@ export class NamespaceService {
     }
   }
 }
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl d31e2ae9fc952894f65e4cbb996044bc6e0d67d1cdd561df2383d0d8b8c08e37 src/services/PatService.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl d31e2ae9fc952894f65e4cbb996044bc6e0d67d1cdd561df2383d0d8b8c08e37 src/services/PatService.ts
 import type { AppConfig } from '../config/env.js';
 import type { KubeObject } from '../domain/types.js';
 import type { KubeGateway } from '../infra/ports.js';
@@ -9869,8 +9869,8 @@ export class PatService {
     };
   }
 }
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl dd60974795fd2544666e4679b2e4199a324791f4871cdf0e06db2bff30d5c008 src/services/WorkspaceService.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl dd60974795fd2544666e4679b2e4199a324791f4871cdf0e06db2bff30d5c008 src/services/WorkspaceService.ts
 import type { AppConfig } from '../config/env.js';
 import type { CreateWorkspaceInput, DevWorkspaceResource, EditorKey, Workspace } from '../domain/types.js';
 import { applyEditorProfile, parseDevfile } from '../factories/devfile-updater.js';
@@ -10089,8 +10089,8 @@ export class WorkspaceService {
     return this.options.editors[editor];
   }
 }
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 35c7c2835c49704489517fc38eee422dca2583d2c85863e1a1b12c9ca03e2e33 src/utils/errors.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 35c7c2835c49704489517fc38eee422dca2583d2c85863e1a1b12c9ca03e2e33 src/utils/errors.ts
 export class AppError extends Error {
   constructor(
     message: string,
@@ -10178,8 +10178,8 @@ export class WorkspaceStopTimeoutError extends TimeoutError {
 export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 34ecf9a94cb4e28680deacec7ce37e4a91c17d9b398740fc4da976d98af15b73 src/utils/k8s-errors.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 34ecf9a94cb4e28680deacec7ce37e4a91c17d9b398740fc4da976d98af15b73 src/utils/k8s-errors.ts
 import axios from 'axios';
 import { AppError, ConflictError, ForbiddenError, NotFoundError, UpstreamError } from './errors.js';
 
@@ -10254,8 +10254,8 @@ export function toAppError(context: string, error: unknown): AppError {
   if (status === 409) return new ConflictError(message, 'CONFLICT', { cause: error });
   return new UpstreamError(message, { cause: error });
 }
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 22b0cdd84fc7895580be2925fd37b215c58840158dee3f1b630b354c94a9b08d src/utils/logger.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 22b0cdd84fc7895580be2925fd37b215c58840158dee3f1b630b354c94a9b08d src/utils/logger.ts
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'silent';
 
 const ORDER: Record<LogLevel, number> = { debug: 10, info: 20, warn: 30, error: 40, silent: 100 };
@@ -10310,8 +10310,8 @@ export function createLogger(
 }
 
 export const silentLogger: Logger = createLogger('silent');
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 2bbec4e3dc0d2adb41de8a5030dcce0008ab44cf4ef127dc3e474602bcd88f66 src/utils/names.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 2bbec4e3dc0d2adb41de8a5030dcce0008ab44cf4ef127dc3e474602bcd88f66 src/utils/names.ts
 import { randomBytes } from 'node:crypto';
 import { BadRequestError } from './errors.js';
 
@@ -10382,8 +10382,8 @@ export function cleanWorkspaceName(base: string, suffix: string = randomSuffix()
       .replace(/-+$/g, '') || 'workspace';
   return `${cleaned}-${suffix}`;
 }
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 898b4319472cf934419b18203e470ee293d762ddb297fcf59a6baef9e62582e8 src/utils/resources.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 898b4319472cf934419b18203e470ee293d762ddb297fcf59a6baef9e62582e8 src/utils/resources.ts
 export interface ResourceSummary {
   limitcpu: number;
   limitmemory: number;
@@ -10474,8 +10474,8 @@ export function summarizeComponents(
     storage: round3(total.storage),
   };
 }
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 03cfa76a81c0aff613c7525ca38a56a44c2fb08a4216b970cac957ee4c97f720 src/utils/timestamp.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 03cfa76a81c0aff613c7525ca38a56a44c2fb08a4216b970cac957ee4c97f720 src/utils/timestamp.ts
 const formatter = new Intl.DateTimeFormat('en-US', {
   month: '2-digit',
   day: '2-digit',
@@ -10515,8 +10515,8 @@ export function durationSince(from: Date | string | undefined, now: Date = new D
   if (Number.isNaN(start.getTime())) return '0 seconds';
   return formatDuration((now.getTime() - start.getTime()) / 1000);
 }
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 65209e33187c8dc0327222b8d9fc56c462cb69053398759f5057b83dd84346e2 tests/e2e/journeys.test.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 65209e33187c8dc0327222b8d9fc56c462cb69053398759f5057b83dd84346e2 tests/e2e/journeys.test.ts
 import jwt from 'jsonwebtoken';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
@@ -10807,8 +10807,8 @@ describe('journey: a client that has not migrated to /api/v1 yet', () => {
     expect(viaV1.headers.get('deprecation')).toBeNull();
   });
 });
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 4116aa61780281c3f4f3a02c2edf201d2e3f2dbe5177954529c4d90785e31549 tests/helpers/InMemoryKube.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 4116aa61780281c3f4f3a02c2edf201d2e3f2dbe5177954529c4d90785e31549 tests/helpers/InMemoryKube.ts
 import type { DevWorkspaceResource, KubeObject } from '../../src/domain/types.js';
 import type { KubeGateway, NamespacedKind } from '../../src/infra/ports.js';
 import { ConflictError, NotFoundError } from '../../src/utils/errors.js';
@@ -11011,8 +11011,8 @@ export class InMemoryKube implements KubeGateway {
     });
   }
 }
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl cc20b081a200f3a9a62e7d6d3c671b58dc2aaccc8b05284ae2b3ba35bbf95500 tests/helpers/e2e.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl cc20b081a200f3a9a62e7d6d3c671b58dc2aaccc8b05284ae2b3ba35bbf95500 tests/helpers/e2e.ts
 import { buildContainer, type Container } from '../../src/container.js';
 import { DevfileRegistryClient, createRegistryHttp } from '../../src/infra/devreg/DevfileRegistryClient.js';
 import { silentLogger } from '../../src/utils/logger.js';
@@ -11134,8 +11134,8 @@ export async function startE2E(env: Record<string, string> = {}): Promise<E2E> {
 }
 
 export { caller };
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 9f4001578da6d35226d69f81149b50b68832a067abaa03f54bd413384e00ab0e tests/helpers/fakes.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 9f4001578da6d35226d69f81149b50b68832a067abaa03f54bd413384e00ab0e tests/helpers/fakes.ts
 import type { CatalogEntry, MetricsRecord } from '../../src/domain/types.js';
 import type {
   Clock,
@@ -11225,8 +11225,8 @@ export class FakeClock implements Clock {
     this.advance(ms);
   }
 }
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 12819625d6e4f56af0eaf05e1582ff887385c5f6cc774d697ebc2e9a97991a73 tests/helpers/integration.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 12819625d6e4f56af0eaf05e1582ff887385c5f6cc774d697ebc2e9a97991a73 tests/helpers/integration.ts
 import type { Express } from 'express';
 import request from 'supertest';
 import { buildContainer, type Container } from '../../src/container.js';
@@ -11280,8 +11280,8 @@ export async function startIntegration(env: Record<string, string> = {}): Promis
     close: () => registry.close(),
   };
 }
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 7b6caa6e389552ce2353f316fcb8e7f0b20dcc64c3deebdf286a010e9a3d7197 tests/helpers/metrics-table.sql
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 7b6caa6e389552ce2353f316fcb8e7f0b20dcc64c3deebdf286a010e9a3d7197 tests/helpers/metrics-table.sql
 -- TEST FIXTURE ONLY. The real metrics table already exists in the Orion Postgres database and is owned by
 -- its DBA: workspace-mgr never creates or alters tables. This file only gives the in-memory test database
 -- (pg-mem) a table of the same shape. Not shipped, not run by the application.
@@ -11312,8 +11312,8 @@ CREATE TABLE IF NOT EXISTS metrics."devspaces-metrics" (
 CREATE INDEX IF NOT EXISTS devspaces_metrics_ts_idx   ON metrics."devspaces-metrics" ("timestamp");
 CREATE INDEX IF NOT EXISTS devspaces_metrics_soeid_idx ON metrics."devspaces-metrics" (soeid);
 CREATE INDEX IF NOT EXISTS devspaces_metrics_event_idx ON metrics."devspaces-metrics" (eventtype, resourcetype);
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 3ee997681ae8d6a0323d3e8a08e01994b8d8d1569153884a096633096ef8f797 tests/helpers/registry-server.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 3ee997681ae8d6a0323d3e8a08e01994b8d8d1569153884a096633096ef8f797 tests/helpers/registry-server.ts
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { SAMPLE_DEVFILE_YAML } from './sample-devfile.js';
@@ -11361,8 +11361,8 @@ export async function startRegistryServer(devfileYaml = SAMPLE_DEVFILE_YAML): Pr
   state.close = () => new Promise((resolve, reject) => server.close((e) => (e ? reject(e) : resolve())));
   return state;
 }
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl a4f031d7c675f1a39e6e26c7b830df9da2d996a54c55cdd0960ef4dd6976c2b2 tests/helpers/sample-devfile.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl a4f031d7c675f1a39e6e26c7b830df9da2d996a54c55cdd0960ef4dd6976c2b2 tests/helpers/sample-devfile.ts
 /** A stack shaped like the ones in the devfile registry: tools container, editor mount, venv and home volumes. */
 export const SAMPLE_DEVFILE_YAML = `schemaVersion: 2.2.0
 metadata:
@@ -11407,8 +11407,8 @@ components:
 `;
 
 export const SAMPLE_PAT = `ghp_${'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8'}`;
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl e77bafed067e34aae81220d0a5cda218c131bbc897b61c4efb81d2c6a1dd398c tests/helpers/testkit.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl e77bafed067e34aae81220d0a5cda218c131bbc897b61c4efb81d2c6a1dd398c tests/helpers/testkit.ts
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import type { Server } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -11536,8 +11536,8 @@ export async function listen(container: Container): Promise<TestServer> {
     close: () => new Promise((resolve, reject) => server.close((e) => (e ? reject(e) : resolve()))),
   };
 }
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 495d57018316dde7ff0f93bdd1c8c5e419501ce16f159c951f28bb4255bfdd12 tests/integration/auth-and-ops.test.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 495d57018316dde7ff0f93bdd1c8c5e419501ce16f159c951f28bb4255bfdd12 tests/integration/auth-and-ops.test.ts
 import jwt from 'jsonwebtoken';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -11708,8 +11708,8 @@ describe('request ids', () => {
     expect((await request(it$.app).get('/healthz')).headers['x-powered-by']).toBeUndefined();
   });
 });
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl c60be7ef25f2d671f4dc6700e35b41db738a7dece4996782835364bc818eacc6 tests/integration/bundle-scripts.test.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl c60be7ef25f2d671f4dc6700e35b41db738a7dece4996782835364bc818eacc6 tests/integration/bundle-scripts.test.ts
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -11940,8 +11940,8 @@ describe('bundle.mjs default mode: only files changed since the last commit', ()
     expect(r.err).toContain('Nothing to bundle');
   });
 });
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 44650965a4271835069039ea261d7deaafed35e4074818de810541fb13f849f9 tests/integration/metrics-db-and-wiring.test.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 44650965a4271835069039ea261d7deaafed35e4074818de810541fb13f849f9 tests/integration/metrics-db-and-wiring.test.ts
 import { describe, expect, it } from 'vitest';
 import { createProductionDependencies, buildContainer } from '../../src/container.js';
 import { NoopMetricsStore } from '../../src/infra/db/MetricsRepository.js';
@@ -12180,8 +12180,8 @@ describe('production wiring', () => {
     );
   });
 });
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 0425d7fe811a92e07c9a88613e516799fd3a90446159e1eecc729b920e685414 tests/integration/pack-unpack-sh.test.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 0425d7fe811a92e07c9a88613e516799fd3a90446159e1eecc729b920e685414 tests/integration/pack-unpack-sh.test.ts
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -12419,8 +12419,8 @@ describe.skipIf(!bash)('pack.sh → all-code-file.txt → unpack.sh', () => {
     expect(files).toEqual([...Object.keys(FIXTURE), 'pack.sh', 'unpack.sh'].sort());
   });
 });
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 980163d4832696dc5119dcf8dd934577788c2ba38525b3e302972f2efceefddc tests/integration/pats-gitconfig-deployments.test.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 980163d4832696dc5119dcf8dd934577788c2ba38525b3e302972f2efceefddc tests/integration/pats-gitconfig-deployments.test.ts
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { startIntegration, type Integration } from '../helpers/integration.js';
 import { SAMPLE_PAT } from '../helpers/sample-devfile.js';
@@ -12584,8 +12584,8 @@ describe('deployment projects', () => {
     expect(t.fakes.kube.namespaces.has('pp2-devspaces-deploy-1')).toBe(true);
   });
 });
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 6b0933997d10467ef3ec4c5fd9b8780bea7da92f71ff7b464677080536e0fd99 tests/integration/workspaces.test.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 6b0933997d10467ef3ec4c5fd9b8780bea7da92f71ff7b464677080536e0fd99 tests/integration/workspaces.test.ts
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { startIntegration, type Integration } from '../helpers/integration.js';
 
@@ -12831,8 +12831,8 @@ describe('workspace lifecycle', () => {
 function registryPaths(): string[] {
   return t.registry.requests.slice(-2);
 }
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 26529f30b509962be4d14fde5c4e27c4d5293f2b3a2d37e5cddc9b419b4f64eb tests/unit/config/env.test.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 26529f30b509962be4d14fde5c4e27c4d5293f2b3a2d37e5cddc9b419b4f64eb tests/unit/config/env.test.ts
 import { describe, expect, it } from 'vitest';
 import { loadConfig, unquote } from '../../../src/config/env.js';
 
@@ -12965,8 +12965,8 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ ...base, LOG_LEVEL: 'loud' })).toThrow(/LOG_LEVEL/);
   });
 });
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 36555740bd2bce6ddc762ff982d1459537b60b4856826baa0f1826c817cb3db2 tests/unit/factories/devfile-updater.test.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 36555740bd2bce6ddc762ff982d1459537b60b4856826baa0f1826c817cb3db2 tests/unit/factories/devfile-updater.test.ts
 import { load } from 'js-yaml';
 import { describe, expect, it } from 'vitest';
 import type { Devfile } from '../../../src/domain/types.js';
@@ -13070,8 +13070,8 @@ describe('updateDevfileYaml', () => {
     expect(byName(out, 'che-goland-server')).toBeDefined();
   });
 });
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl c64e09abf432c0ca660d2570a8afdf308f359fbd310560f82b3b6dd52698f52b tests/unit/factories/workspace-factory.test.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl c64e09abf432c0ca660d2570a8afdf308f359fbd310560f82b3b6dd52698f52b tests/unit/factories/workspace-factory.test.ts
 import { describe, expect, it } from 'vitest';
 import type { Devfile } from '../../../src/domain/types.js';
 import { buildLogRecord } from '../../../src/factories/log-factory.js';
@@ -13202,8 +13202,8 @@ describe('buildLogRecord', () => {
     expect(r).toMatchObject({ limitcpu: 2, useraction: 'system', csiid: '9' });
   });
 });
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl df9a1b7ab9f68e6c1cf0fac170a9cbc1a2ecc6af89b72fda2cc11786d717f400 tests/unit/http/auth.test.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl df9a1b7ab9f68e6c1cf0fac170a9cbc1a2ecc6af89b72fda2cc11786d717f400 tests/unit/http/auth.test.ts
 import type { NextFunction, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { describe, expect, it } from 'vitest';
@@ -13322,8 +13322,8 @@ describe('authorizeSoeid', () => {
     expect(withPrincipal(undefined, 'pp1').error).toBeInstanceOf(UnauthorizedError);
   });
 });
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 203f51c5a0f978617f7885186209652ab7fcbf6cc1103c8058f9bbdbdc3924d5 tests/unit/http/errors-schemas.test.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 203f51c5a0f978617f7885186209652ab7fcbf6cc1103c8058f9bbdbdc3924d5 tests/unit/http/errors-schemas.test.ts
 import type { NextFunction, Request, Response } from 'express';
 import { describe, expect, it } from 'vitest';
 import { asyncHandler, createErrorHandler, errorBody, notFoundHandler } from '../../../src/http/errors.js';
@@ -13490,8 +13490,8 @@ describe('other schemas', () => {
     }
   });
 });
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 95b9a23fcee38b89856461917cacf3e788c56d3024d132093b02b72d8fd89be4 tests/unit/infra/DevfileRegistryClient.test.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 95b9a23fcee38b89856461917cacf3e788c56d3024d132093b02b72d8fd89be4 tests/unit/infra/DevfileRegistryClient.test.ts
 import axios, { AxiosError, type AxiosInstance, type InternalAxiosRequestConfig } from 'axios';
 import { describe, expect, it } from 'vitest';
 import {
@@ -13602,8 +13602,8 @@ describe('createRegistryHttp', () => {
     expect(h.defaults.timeout).toBe(10_000);
   });
 });
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl f051802e98ceb6fca4d6a9fb353f3966cc7aa3c7d48b6a82770eb8a763d3f2ca tests/unit/infra/EmailNotifier.test.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl f051802e98ceb6fca4d6a9fb353f3966cc7aa3c7d48b6a82770eb8a763d3f2ca tests/unit/infra/EmailNotifier.test.ts
 import { describe, expect, it } from 'vitest';
 import { EmailNotifier, NoopNotifier, type FetchFn } from '../../../src/infra/email/EmailNotifier.js';
 import {
@@ -13810,8 +13810,8 @@ describe('GraphqlUserDirectory', () => {
     expect(await new NullUserDirectory().firstName()).toBeUndefined();
   });
 });
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 770fc7b41277eec5b7ddfcf1dec06865f41ab018c4eec6ea490ff6094ca52a80 tests/unit/infra/KubeClient.test.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 770fc7b41277eec5b7ddfcf1dec06865f41ab018c4eec6ea490ff6094ca52a80 tests/unit/infra/KubeClient.test.ts
 import { CoreV1Api, KubeConfig, KubernetesObjectApi } from '@kubernetes/client-node';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { KubeClient, loadKubeConfig } from '../../../src/infra/kube/KubeClient.js';
@@ -14030,8 +14030,8 @@ describe('loadKubeConfig', () => {
     await expect(client().setWorkspaceStarted('ns', 'ws', true)).rejects.toBeInstanceOf(NotFoundError);
   });
 });
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 7950d40a2c576eafd1951a6c482533cc368d6a2e3ce312fc38d56a2cf50d8d56 tests/unit/infra/MetricsRepository.test.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 7950d40a2c576eafd1951a6c482533cc368d6a2e3ce312fc38d56a2cf50d8d56 tests/unit/infra/MetricsRepository.test.ts
 import { describe, expect, it, vi } from 'vitest';
 import type { AppConfig } from '../../../src/config/env.js';
 import type { MetricsRecord } from '../../../src/domain/types.js';
@@ -14391,8 +14391,8 @@ describe('NoopMetricsStore', () => {
     await expect(Promise.all([s.insert(), s.ping(), s.close()])).resolves.toBeDefined();
   });
 });
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl f285488c7aa0e5370a3fd8c81543cccea69f4d972d383d29735f930b734fabd3 tests/unit/scripts/bundle-format.test.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl f285488c7aa0e5370a3fd8c81543cccea69f4d972d383d29735f930b734fabd3 tests/unit/scripts/bundle-format.test.ts
 import { describe, expect, it } from 'vitest';
 import {
   BUNDLE_MAGIC,
@@ -14617,8 +14617,8 @@ describe('helpers', () => {
     }
   });
 });
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl a1e0c3c43471ea4d922d19a4c565e16915364616aab6f887be4fa8814dfdccca tests/unit/services/DeploymentNamespaceService.test.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl a1e0c3c43471ea4d922d19a4c565e16915364616aab6f887be4fa8814dfdccca tests/unit/services/DeploymentNamespaceService.test.ts
 import { beforeEach, describe, expect, it } from 'vitest';
 import { DeploymentNamespaceService } from '../../../src/services/DeploymentNamespaceService.js';
 import { MetricsRecorder } from '../../../src/services/MetricsRecorder.js';
@@ -14761,8 +14761,8 @@ describe('delete', () => {
     expect(notifier.deleted).toHaveLength(0);
   });
 });
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl cf38e80396f33038c133fd705f992a650c5fc72e6441bdb71f496ab09a5c5489 tests/unit/services/GitConfigService.test.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl cf38e80396f33038c133fd705f992a650c5fc72e6441bdb71f496ab09a5c5489 tests/unit/services/GitConfigService.test.ts
 import { beforeEach, describe, expect, it } from 'vitest';
 import { GitConfigService, GITCONFIG_CONFIGMAP } from '../../../src/services/GitConfigService.js';
 import { MetricsRecorder } from '../../../src/services/MetricsRecorder.js';
@@ -14833,8 +14833,8 @@ describe('GitConfigService', () => {
     expect(await service.delete('pp1', '1001')).toBe(false);
   });
 });
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl cd03a7146f9ed98fbb65ef77efe5ec6cef4310ec0a0ae6d928c2e72a7d23807f tests/unit/services/MetricsRecorder.test.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl cd03a7146f9ed98fbb65ef77efe5ec6cef4310ec0a0ae6d928c2e72a7d23807f tests/unit/services/MetricsRecorder.test.ts
 import { describe, expect, it } from 'vitest';
 import { MetricsRecorder } from '../../../src/services/MetricsRecorder.js';
 import { createLogger } from '../../../src/utils/logger.js';
@@ -14902,8 +14902,8 @@ describe('MetricsRecorder.track', () => {
     await expect(recorder.track(base, async () => 'ok')).resolves.toBe('ok');
   });
 });
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl a9c2b2141163d299681d6350a45906c4a5c46799d68105db157459c68b95d829 tests/unit/services/NamespaceService.test.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl a9c2b2141163d299681d6350a45906c4a5c46799d68105db157459c68b95d829 tests/unit/services/NamespaceService.test.ts
 import { beforeEach, describe, expect, it } from 'vitest';
 import { NamespaceService } from '../../../src/services/NamespaceService.js';
 import { MetricsRecorder } from '../../../src/services/MetricsRecorder.js';
@@ -15062,8 +15062,8 @@ describe('listForUser / listProjects', () => {
     expect((await make().listProjects('pp1'))[0]?.csiid).toBe('7');
   });
 });
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl cec08b267724070e46c06de6a4607440b0cd57e002808c9bb72f8d001eea8743 tests/unit/services/PatService.test.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl cec08b267724070e46c06de6a4607440b0cd57e002808c9bb72f8d001eea8743 tests/unit/services/PatService.test.ts
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { KubeObject } from '../../../src/domain/types.js';
 import { MetricsRecorder } from '../../../src/services/MetricsRecorder.js';
@@ -15212,8 +15212,8 @@ describe('list', () => {
     ]);
   });
 });
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 354e4e259817a69362e9ef6764e537f2708c9161081b4909d0fe2525f875c326 tests/unit/services/WorkspaceService.test.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 354e4e259817a69362e9ef6764e537f2708c9161081b4909d0fe2525f875c326 tests/unit/services/WorkspaceService.test.ts
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { CreateWorkspaceInput } from '../../../src/domain/types.js';
 import { MetricsRecorder } from '../../../src/services/MetricsRecorder.js';
@@ -15485,8 +15485,8 @@ describe('helpers', () => {
     });
   });
 });
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 0f0e01f4eecb7cbf5940517d9b632ea33085b18da8e4f62105889ff05d805e00 tests/unit/utils/k8s-errors.test.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 0f0e01f4eecb7cbf5940517d9b632ea33085b18da8e4f62105889ff05d805e00 tests/unit/utils/k8s-errors.test.ts
 import axios, { AxiosError } from 'axios';
 import { describe, expect, it } from 'vitest';
 import {
@@ -15580,8 +15580,8 @@ describe('errors', () => {
     expect(errorMessage(42)).toBe('42');
   });
 });
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 4f07f43efec10f27c65f75b443290ff6b9e41c4e1f71b9e5ce4ce8faa87565e6 tests/unit/utils/logger.test.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 4f07f43efec10f27c65f75b443290ff6b9e41c4e1f71b9e5ce4ce8faa87565e6 tests/unit/utils/logger.test.ts
 import { describe, expect, it } from 'vitest';
 import { createLogger, redact } from '../../../src/utils/logger.js';
 
@@ -15644,8 +15644,8 @@ describe('logger', () => {
     expect(redact(deep)).toEqual(deep);
   });
 });
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl e747b4c4cedd983ac77e865c24d2acff9401ac10e609722d14797e9f763f556a tests/unit/utils/names.test.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl e747b4c4cedd983ac77e865c24d2acff9401ac10e609722d14797e9f763f556a tests/unit/utils/names.test.ts
 import { describe, expect, it } from 'vitest';
 import {
   cleanWorkspaceName,
@@ -15730,8 +15730,8 @@ describe('cleanWorkspaceName', () => {
     expect(randomSuffix()).toMatch(/^[0-9a-f]{4}$/);
   });
 });
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl d3a5b800f3f52756636fb2d1134bacb2cff3dba8cac667f05920f5d8d9ec0e54 tests/unit/utils/resources.test.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl d3a5b800f3f52756636fb2d1134bacb2cff3dba8cac667f05920f5d8d9ec0e54 tests/unit/utils/resources.test.ts
 import { describe, expect, it } from 'vitest';
 import { parseCpu, parseGi, summarizeComponents } from '../../../src/utils/resources.js';
 
@@ -15804,8 +15804,8 @@ describe('summarizeComponents', () => {
     });
   });
 });
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 88754b9e0be5237e97d5ad84c391af418eac6b6d3d16a0e986f0341bf82dc1c4 tests/unit/utils/timestamp.test.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 88754b9e0be5237e97d5ad84c391af418eac6b6d3d16a0e986f0341bf82dc1c4 tests/unit/utils/timestamp.test.ts
 import { describe, expect, it } from 'vitest';
 import { durationSince, formatDuration, getFormattedTimestampCST } from '../../../src/utils/timestamp.js';
 
@@ -15852,8 +15852,8 @@ describe('durationSince', () => {
     expect(durationSince('not a date', now)).toBe('0 seconds');
   });
 });
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 8cd1d4d52eda790e91894c625f5081404678bcb20706938555805fae74e5d31f tsconfig.build.json
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 8cd1d4d52eda790e91894c625f5081404678bcb20706938555805fae74e5d31f tsconfig.build.json
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
@@ -15864,8 +15864,8 @@ describe('durationSince', () => {
   "include": ["src"],
   "exclude": ["node_modules", "dist", "legacy", "tests"]
 }
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 0ea98ae34b2183fba8ff4401b6a8b0297b9a3c4113fb3cf18c219835df4e015f tsconfig.json
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 0ea98ae34b2183fba8ff4401b6a8b0297b9a3c4113fb3cf18c219835df4e015f tsconfig.json
 {
   "compilerOptions": {
     "target": "ES2022",
@@ -15888,8 +15888,8 @@ describe('durationSince', () => {
   "include": ["src", "tests", "vitest.config.ts"],
   "exclude": ["node_modules", "dist", "legacy"]
 }
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 0dcf60faca9b77bc218cfeef8a5d2769cd6ee37fa5f63327ece9ddf99e176672 unpack.sh
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 0ea750509b9f4ae25121b7e6a41a6a190b0e32cceb846b49dcda2d28718265f1 unpack.sh
 #!/usr/bin/env bash
 # Recreate the whole workspace-mgr app from the text file made by pack.sh (all-code-file.txt).
 # Needs only bash, awk and coreutils (sha256sum or shasum, base64, mktemp). Works in Git Bash on Windows.
@@ -15955,9 +15955,9 @@ mkdir -p "$STAGE/files"
 # conversion of the whole text file. It is done here, byte-exact, because the Windows sed/awk text modes would
 # also eat the CR of a file that legitimately has CRLF endings.
 # BINMODE=3: gawk on Windows (Git Bash) otherwise strips the CR from CRLF files; other awks ignore it.
-extract() {
-rm -rf "$STAGE/files"; mkdir -p "$STAGE/files"; : > "$MANIFEST"
-awk -v BINMODE=3 -v strip="$1" -v stage="$STAGE/files" -v manifest="$MANIFEST" '
+extract() {  # extract STRIP STAGE_DIR MANIFEST_FILE
+rm -rf "$2"; mkdir -p "$2"; : > "$3"
+awk -v BINMODE=3 -v strip="$1" -v stage="$2" -v manifest="$3" '
 function fail(msg) { print "unpack: " msg > "/dev/stderr"; failed = 1; exit 1 }
 function safe(p,   t) {
   if (p == "" || p ~ /^\// || p !~ /^[A-Za-z0-9._@+=, \/-]+$/) return 0
@@ -15972,14 +15972,18 @@ function finish(   cmd) {
   } else {
     if (!have) printf "" > outpath
     else if (nl == "nl") printf "%s\n", prev > outpath
-    else printf "%s", prev > outpath
+    else {
+      # strip=2: git turned the newline pack.sh appended after a file with no final newline into CRLF
+      if (strip + 0 == 2) sub(/\r$/, "", prev)
+      printf "%s", prev > outpath
+    }
     close(outpath)
   }
   print path "\t" sha "\t" enc >> manifest
   infile = 0; count++
 }
 {
-  if (strip + 0) sub(/\r$/, "")
+  if (strip + 0 == 1) sub(/\r$/, "")
   m = $0; sub(/\r$/, "", m)
   if (!infile) {
     if (m ~ /^#### token: /) { tok = substr(m, 13); next }
@@ -16018,36 +16022,45 @@ END {
 }
 
 # ---- 2. verify every file against its recorded SHA-256 (repairing CRLF conversion if provable) --------
-BAD=""
-verify() {
-  local path sum enc
-  while IFS=$'\t' read -r path sum enc; do
-    [ -n "$path" ] || continue
-    if [ "$(hash_of "$STAGE/files/$path")" != "$sum" ]; then BAD="$path"; return 1; fi
-  done < "$MANIFEST"
-  return 0
-}
+extract 0 "$STAGE/files" "$MANIFEST"
+
+bad_files=()
+while IFS=$'\t' read -r path sum enc; do
+  [ -n "$path" ] || continue
+  [ "$(hash_of "$STAGE/files/$path")" = "$sum" ] || bad_files+=("$path")
+done < "$MANIFEST"
 
 REPAIRED=0
-extract 0
-if ! verify; then
-  # Was the whole text file converted from LF to CRLF (an editor, e-mail client or git autocrlf)? Try the exact
-  # inverse; it is only accepted if EVERY file then matches its checksum.
+if [ "${#bad_files[@]}" -gt 0 ]; then
+  # Did an editor, e-mail client or git (autocrlf) change the line endings of the text file? Converters differ:
+  # some add a CR to EVERY line, git adds one only to lines that ended in a bare LF, so files that already had
+  # CRLF stay untouched (except the newline pack.sh adds after a file with no final newline). So repair FILE BY
+  # FILE with these candidates, and accept one only when it matches the recorded SHA-256; otherwise refuse:
+  #   1 = remove one CR from every line      2 = remove one CR from the last line of a no-final-newline file
   if head -n 1 "$IN" | od -An -c | grep -q '\\r'; then
-    first_bad="$BAD"
-    extract 1
-    if verify; then
-      REPAIRED=1
-    else
-      echo "unpack: checksum mismatch for $first_bad (file was edited or damaged in transit; the line endings look converted to CRLF but converting them back did not restore it); nothing was written" >&2
-      exit 1
-    fi
-  else
-    echo "unpack: checksum mismatch for $BAD (file was edited or damaged in transit); nothing was written" >&2
+    extract 1 "$STAGE/files1" "$STAGE/.manifest1"
+    extract 2 "$STAGE/files2" "$STAGE/.manifest2"
+    still_bad=()
+    for path in "${bad_files[@]}"; do
+      want="$(awk -F '\t' -v p="$path" '$1 == p { print $2; exit }' "$MANIFEST")"
+      fixed=0
+      for candidate in files1 files2; do
+        if [ -f "$STAGE/$candidate/$path" ] && [ "$(hash_of "$STAGE/$candidate/$path")" = "$want" ]; then
+          cp "$STAGE/$candidate/$path" "$STAGE/files/$path"
+          fixed=1
+          break
+        fi
+      done
+      if [ "$fixed" = 1 ]; then REPAIRED=$((REPAIRED + 1)); else still_bad+=("$path"); fi
+    done
+    bad_files=("${still_bad[@]+"${still_bad[@]}"}")
+  fi
+  if [ "${#bad_files[@]}" -gt 0 ]; then
+    echo "unpack: checksum mismatch for ${bad_files[0]}$([ "${#bad_files[@]}" -gt 1 ] && echo " and $((${#bad_files[@]} - 1)) more") (the text file was edited or damaged in transit, not just line-ending converted); nothing was written" >&2
     exit 1
   fi
 fi
-[ "$REPAIRED" = 1 ] && echo "Note: line endings had been converted to CRLF; converted back, every file matches its checksum." >&2
+[ "$REPAIRED" -gt 0 ] && echo "Note: $REPAIRED file(s) had their line endings changed in transit (editor/e-mail/git autocrlf?); converted back, and every file matches its checksum." >&2
 
 TOTAL="$(grep -c . "$MANIFEST" || true)"
 
@@ -16093,8 +16106,8 @@ echo
 echo "$created created, $overwritten overwritten, $unchanged unchanged, $skipped skipped -> $OUT"
 [ "$skipped" -gt 0 ] && exit 2
 exit 0
-@@@END@ba546fc64dce1166e094386e
-@@@FILE@ba546fc64dce1166e094386e text nl 5412e037f2bddc75c24424b5e33ce519d7a16a1b30e3e5f18171c276153f15e8 vitest.config.ts
+@@@END@2b1f0a53b79c3c16389504f6
+@@@FILE@2b1f0a53b79c3c16389504f6 text nl 5412e037f2bddc75c24424b5e33ce519d7a16a1b30e3e5f18171c276153f15e8 vitest.config.ts
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
@@ -16134,4 +16147,4 @@ export default defineConfig({
     },
   },
 });
-@@@END@ba546fc64dce1166e094386e
+@@@END@2b1f0a53b79c3c16389504f6

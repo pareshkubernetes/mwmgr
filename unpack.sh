@@ -63,9 +63,9 @@ mkdir -p "$STAGE/files"
 # conversion of the whole text file. It is done here, byte-exact, because the Windows sed/awk text modes would
 # also eat the CR of a file that legitimately has CRLF endings.
 # BINMODE=3: gawk on Windows (Git Bash) otherwise strips the CR from CRLF files; other awks ignore it.
-extract() {
-rm -rf "$STAGE/files"; mkdir -p "$STAGE/files"; : > "$MANIFEST"
-awk -v BINMODE=3 -v strip="$1" -v stage="$STAGE/files" -v manifest="$MANIFEST" '
+extract() {  # extract STRIP STAGE_DIR MANIFEST_FILE
+rm -rf "$2"; mkdir -p "$2"; : > "$3"
+awk -v BINMODE=3 -v strip="$1" -v stage="$2" -v manifest="$3" '
 function fail(msg) { print "unpack: " msg > "/dev/stderr"; failed = 1; exit 1 }
 function safe(p,   t) {
   if (p == "" || p ~ /^\// || p !~ /^[A-Za-z0-9._@+=, \/-]+$/) return 0
@@ -80,14 +80,18 @@ function finish(   cmd) {
   } else {
     if (!have) printf "" > outpath
     else if (nl == "nl") printf "%s\n", prev > outpath
-    else printf "%s", prev > outpath
+    else {
+      # strip=2: git turned the newline pack.sh appended after a file with no final newline into CRLF
+      if (strip + 0 == 2) sub(/\r$/, "", prev)
+      printf "%s", prev > outpath
+    }
     close(outpath)
   }
   print path "\t" sha "\t" enc >> manifest
   infile = 0; count++
 }
 {
-  if (strip + 0) sub(/\r$/, "")
+  if (strip + 0 == 1) sub(/\r$/, "")
   m = $0; sub(/\r$/, "", m)
   if (!infile) {
     if (m ~ /^#### token: /) { tok = substr(m, 13); next }
@@ -126,36 +130,45 @@ END {
 }
 
 # ---- 2. verify every file against its recorded SHA-256 (repairing CRLF conversion if provable) --------
-BAD=""
-verify() {
-  local path sum enc
-  while IFS=$'\t' read -r path sum enc; do
-    [ -n "$path" ] || continue
-    if [ "$(hash_of "$STAGE/files/$path")" != "$sum" ]; then BAD="$path"; return 1; fi
-  done < "$MANIFEST"
-  return 0
-}
+extract 0 "$STAGE/files" "$MANIFEST"
+
+bad_files=()
+while IFS=$'\t' read -r path sum enc; do
+  [ -n "$path" ] || continue
+  [ "$(hash_of "$STAGE/files/$path")" = "$sum" ] || bad_files+=("$path")
+done < "$MANIFEST"
 
 REPAIRED=0
-extract 0
-if ! verify; then
-  # Was the whole text file converted from LF to CRLF (an editor, e-mail client or git autocrlf)? Try the exact
-  # inverse; it is only accepted if EVERY file then matches its checksum.
+if [ "${#bad_files[@]}" -gt 0 ]; then
+  # Did an editor, e-mail client or git (autocrlf) change the line endings of the text file? Converters differ:
+  # some add a CR to EVERY line, git adds one only to lines that ended in a bare LF, so files that already had
+  # CRLF stay untouched (except the newline pack.sh adds after a file with no final newline). So repair FILE BY
+  # FILE with these candidates, and accept one only when it matches the recorded SHA-256; otherwise refuse:
+  #   1 = remove one CR from every line      2 = remove one CR from the last line of a no-final-newline file
   if head -n 1 "$IN" | od -An -c | grep -q '\\r'; then
-    first_bad="$BAD"
-    extract 1
-    if verify; then
-      REPAIRED=1
-    else
-      echo "unpack: checksum mismatch for $first_bad (file was edited or damaged in transit; the line endings look converted to CRLF but converting them back did not restore it); nothing was written" >&2
-      exit 1
-    fi
-  else
-    echo "unpack: checksum mismatch for $BAD (file was edited or damaged in transit); nothing was written" >&2
+    extract 1 "$STAGE/files1" "$STAGE/.manifest1"
+    extract 2 "$STAGE/files2" "$STAGE/.manifest2"
+    still_bad=()
+    for path in "${bad_files[@]}"; do
+      want="$(awk -F '\t' -v p="$path" '$1 == p { print $2; exit }' "$MANIFEST")"
+      fixed=0
+      for candidate in files1 files2; do
+        if [ -f "$STAGE/$candidate/$path" ] && [ "$(hash_of "$STAGE/$candidate/$path")" = "$want" ]; then
+          cp "$STAGE/$candidate/$path" "$STAGE/files/$path"
+          fixed=1
+          break
+        fi
+      done
+      if [ "$fixed" = 1 ]; then REPAIRED=$((REPAIRED + 1)); else still_bad+=("$path"); fi
+    done
+    bad_files=("${still_bad[@]+"${still_bad[@]}"}")
+  fi
+  if [ "${#bad_files[@]}" -gt 0 ]; then
+    echo "unpack: checksum mismatch for ${bad_files[0]}$([ "${#bad_files[@]}" -gt 1 ] && echo " and $((${#bad_files[@]} - 1)) more") (the text file was edited or damaged in transit, not just line-ending converted); nothing was written" >&2
     exit 1
   fi
 fi
-[ "$REPAIRED" = 1 ] && echo "Note: line endings had been converted to CRLF; converted back, every file matches its checksum." >&2
+[ "$REPAIRED" -gt 0 ] && echo "Note: $REPAIRED file(s) had their line endings changed in transit (editor/e-mail/git autocrlf?); converted back, and every file matches its checksum." >&2
 
 TOTAL="$(grep -c . "$MANIFEST" || true)"
 
