@@ -237,19 +237,19 @@ describe('journey: things go wrong', () => {
       const res = await call('POST', '/api/v1/pp1/workspaces', { devworkspaceValue: 'python', csiid: '1' });
       expect(res.status).toBe(200);
       expect((await call('GET', '/api/v1/pp1/workspaces')).body).toHaveLength(1);
-      expect((await e2e.anonymous('GET', '/healthz')).status).toBe(200);
+      expect((await e2e.anonymous('GET', '/api/v1/healthz')).status).toBe(200);
     } finally {
       e2e.container.metrics.insert = original;
     }
   });
 
   it('readiness reflects the cluster, liveness does not', async () => {
-    expect((await e2e.anonymous('GET', '/readyz')).status).toBe(200);
+    expect((await e2e.anonymous('GET', '/api/v1/readyz')).status).toBe(200);
     e2e.fakes.kube.failOnce('ping', new Error('api server down'));
-    const down = await e2e.anonymous('GET', '/readyz');
+    const down = await e2e.anonymous('GET', '/api/v1/readyz');
     expect(down.status).toBe(503);
     expect(down.body.checks.kubernetes).toBe('unavailable');
-    expect((await e2e.anonymous('GET', '/healthz')).status).toBe(200);
+    expect((await e2e.anonymous('GET', '/api/v1/healthz')).status).toBe(200);
   });
 
   it('answers malformed requests with 400s, not crashes', async () => {
@@ -268,23 +268,18 @@ describe('journey: things go wrong', () => {
   });
 });
 
-describe('journey: a client that has not migrated to /api/v1 yet', () => {
-  it('keeps working on the old paths, flagged as deprecated', async () => {
-    const login = await e2e.anonymous('POST', '/login', {
-      username: 'orion-admin',
-      password: 'correct horse battery staple',
-    });
-    expect(login.status).toBe(200);
-    expect(login.headers.get('deprecation')).toBe('true');
-    const old = caller(e2e.baseUrl, login.body.token);
-
-    const created = await old('POST', '/pp1/workspaces', { devworkspaceValue: 'python', csiid: '7' });
-    expect(created.status).toBe(200);
-    expect(created.headers.get('link')).toContain('/api/v1/pp1/workspaces');
-
-    // and the same data is visible through v1
-    const viaV1 = await call('GET', '/api/v1/pp1/workspaces');
-    expect(viaV1.body.map((w: { id: string }) => w.id)).toEqual([created.body.id]);
-    expect(viaV1.headers.get('deprecation')).toBeNull();
+describe('journey: versioned API only', () => {
+  it('rejects old paths and provisions through v1', async () => {
+    expect((await e2e.anonymous('POST', '/login', {})).status).toBe(404);
+    expect((await call('GET', '/pp1/workspaces')).status).toBe(404);
+    const project = await call('POST', '/api/v1/pp1/projects', { csiid: '7' });
+    expect(project.status).toBe(201);
+    expect(
+      (await call('PUT', '/api/v1/support/resources', { soeid: 'pp1', csiid: '7', target: 'workspace' }))
+        .status,
+    ).toBe(200);
+    const settings = await call('PATCH', '/api/v1/configuration', { MAX_RUNNING_WORKSPACES: 1 });
+    expect(settings.status).toBe(200);
+    expect((await call('GET', '/api/v1/logs?days=1')).status).toBe(200);
   });
 });

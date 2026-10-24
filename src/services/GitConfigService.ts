@@ -1,4 +1,4 @@
-import type { KubeObject } from '../domain/types.js';
+import type { KubeObject } from '../types.js';
 import type { KubeGateway } from '../infra/ports.js';
 import { BadRequestError, NotFoundError } from '../utils/errors.js';
 import type { MetricsRecorder } from './MetricsRecorder.js';

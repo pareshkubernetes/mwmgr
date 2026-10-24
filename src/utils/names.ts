@@ -6,7 +6,7 @@ const CSIID_RE = /^\d{1,10}$/;
 const DNS_LABEL_RE = /^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$/;
 const TOKEN_NAME_RE = /^[a-z0-9]([-a-z0-9]{0,40}[a-z0-9])?$/;
 
-/** Path segments that are routes, not users (the legacy unversioned layout puts `:soeid` at the root). */
+/** Reserve API path names to avoid ambiguous user URLs. */
 const RESERVED_SOEIDS = new Set(['api', 'login', 'catalog', 'healthz', 'readyz']);
 
 /** Validate and normalise a user id. User ids end up in namespace names, so they are strictly allow-listed. */

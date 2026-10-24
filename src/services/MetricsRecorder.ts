@@ -1,5 +1,5 @@
 import { buildLogRecord, type MetricsInput } from '../factories/log-factory.js';
-import type { MetricsRecord } from '../domain/types.js';
+import type { MetricsRecord } from '../types.js';
 import { systemClock, type Clock, type MetricsStore } from '../infra/ports.js';
 import { errorMessage } from '../utils/errors.js';
 import { silentLogger, type Logger } from '../utils/logger.js';

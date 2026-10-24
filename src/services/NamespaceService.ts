@@ -9,7 +9,7 @@ import {
   USER_ROLE_CONFIG,
   WORKSPACES_NAMESPACE_SELECTOR,
 } from '../constants/kubernetes-configs.js';
-import type { KubeObject, Project } from '../domain/types.js';
+import type { KubeObject, Project } from '../types.js';
 import type { KubeGateway } from '../infra/ports.js';
 import { ConflictError, NotFoundError } from '../utils/errors.js';
 import { silentLogger, type Logger } from '../utils/logger.js';
@@ -110,7 +110,7 @@ export class NamespaceService {
     }
 
     try {
-      await this.provision(soeid, name);
+      await this.reconcile(soeid, name);
     } catch (error) {
       this.logger.error('namespace.provision_failed', { soeid, namespace: name });
       await this.kube.deleteNamespace(name).catch(() => false);
@@ -119,7 +119,7 @@ export class NamespaceService {
     return true;
   }
 
-  private async provision(soeid: string, namespace: string): Promise<void> {
+  async reconcile(soeid: string, namespace: string): Promise<void> {
     await this.kube.apply('Role', namespace, USER_ROLE_CONFIG);
     await this.kube.apply('RoleBinding', namespace, {
       apiVersion: 'rbac.authorization.k8s.io/v1',

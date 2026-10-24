@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import type { CreateWorkspaceInput } from '../../../src/domain/types.js';
+import type { CreateWorkspaceInput } from '../../../src/types.js';
 import { MetricsRecorder } from '../../../src/services/MetricsRecorder.js';
 import { NamespaceService } from '../../../src/services/NamespaceService.js';
 import { WorkspaceService, isActive, toWorkspace } from '../../../src/services/WorkspaceService.js';

@@ -2,7 +2,7 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import type { AppConfig } from '../config/env.js';
-import type { Principal } from '../domain/types.js';
+import type { Principal } from '../types.js';
 import { ForbiddenError, UnauthorizedError } from '../utils/errors.js';
 import { parseSoeid } from '../utils/names.js';
 

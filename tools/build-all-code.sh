@@ -103,6 +103,14 @@ fi
 if [ -z "$BASE" ]; then
   MODE="entire app"
   cut -f2 "$T/current" > "$T/include"
+  # Full snapshots also carry deletions for an existing installation.
+  REMOVAL_BASE="$STATE"
+  [ "$REDO" = 1 ] && REMOVAL_BASE="$STATE.prev"
+  if [ -f "$REMOVAL_BASE" ]; then
+    cut -f2 "$T/current" | sort -u > "$T/cur.paths"
+    cut -f2 "$REMOVAL_BASE" | sort -u > "$T/base.paths"
+    comm -13 "$T/cur.paths" "$T/base.paths" > "$T/removed"
+  fi
 else
   MODE="updated files only"
   sort "$T/current" > "$T/cur.sorted"
@@ -156,7 +164,9 @@ generate() {
   done < "$T/include"
   {
     echo "# all-app-code.txt - $MODE - generated $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    echo "# On the other computer, inside the app folder:   bash recreate-app.sh -f"
+    echo "# On the other computer, inside the app folder:   bash recreate-app.sh -f --prune"
+    echo "# Includes source, tests, configuration templates and checksums; excludes secrets and installed dependencies."
+    echo "# Install dependencies from the configured internal npm repository."
     echo
     while IFS= read -r f; do printf '/%s\n' "$f"; cat "$f"; echo; done < "$T/plain"
     if [ -s "$T/removed" ]; then

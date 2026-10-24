@@ -1,6 +1,6 @@
 import pg from 'pg';
 import type { AppConfig } from '../../config/env.js';
-import type { MetricsRecord } from '../../domain/types.js';
+import type { MetricsRecord } from '../../types.js';
 import { errorMessage } from '../../utils/errors.js';
 import { silentLogger, type Logger } from '../../utils/logger.js';
 import type { MetricsStore } from '../ports.js';
@@ -45,7 +45,7 @@ export function createPgPool(config: AppConfig['postgres'], logger: Logger = sil
   return pool;
 }
 
-/** UTC wall-clock text (`2026-01-02 03:04:05.678`), the format the original service wrote. */
+/** Database timestamps use UTC wall-clock text: `2026-01-02 03:04:05.678`. */
 export const formatUtc = (date: Date): string => date.toISOString().replace('T', ' ').replace('Z', '');
 
 /** Every value the service can store, keyed by column name. */

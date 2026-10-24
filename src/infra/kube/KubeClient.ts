@@ -5,7 +5,7 @@ import {
   PatchStrategy,
   type KubernetesObject,
 } from '@kubernetes/client-node';
-import type { DevWorkspaceResource, KubeObject } from '../../domain/types.js';
+import type { DevWorkspaceResource, KubeObject } from '../../types.js';
 import { isK8sStatus, toAppError } from '../../utils/k8s-errors.js';
 import type { KubeGateway, NamespacedKind } from '../ports.js';
 
@@ -57,6 +57,28 @@ export function createKubeConfig(connection: ClusterConnection): KubeConfig {
 
 /** Kubernetes/OpenShift access through the pod's service account (or a kubeconfig for local runs). */
 export class KubeClient implements KubeGateway {
+  async applyCluster(kind: 'ClusterRole' | 'ClusterRoleBinding', body: KubeObject): Promise<KubeObject> {
+    const object = asK8s({
+      ...body,
+      apiVersion: 'rbac.authorization.k8s.io/v1',
+      kind,
+      metadata: { ...body.metadata, namespace: undefined },
+    });
+    return this.call(`Apply ${kind}`, async () => {
+      try {
+        const current = await this.objects.read({
+          apiVersion: object.apiVersion,
+          kind,
+          metadata: { name: body.metadata?.name ?? '' },
+        });
+        object.metadata = { ...object.metadata, resourceVersion: current.metadata?.resourceVersion };
+        return asKube<KubeObject>(await this.objects.replace(object));
+      } catch (error) {
+        if (!isK8sStatus(error, 404)) throw error;
+        return asKube<KubeObject>(await this.objects.create(object));
+      }
+    });
+  }
   private readonly core: CoreV1Api;
   private readonly objects: KubernetesObjectApi;
 

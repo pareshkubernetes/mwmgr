@@ -70,18 +70,6 @@ export class WorkspaceRunCountExceededError extends ConflictError {
   }
 }
 
-export class WorkspaceStartTimeoutError extends TimeoutError {
-  constructor(message: string) {
-    super(message);
-  }
-}
-
-export class WorkspaceStopTimeoutError extends TimeoutError {
-  constructor(message: string) {
-    super(message);
-  }
-}
-
 export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }

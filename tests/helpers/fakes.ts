@@ -1,4 +1,4 @@
-import type { CatalogEntry, MetricsRecord } from '../../src/domain/types.js';
+import type { CatalogEntry, MetricsRecord } from '../../src/types.js';
 import type {
   Clock,
   DevfileRegistry,

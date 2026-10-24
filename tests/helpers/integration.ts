@@ -1,7 +1,7 @@
 import type { Express } from 'express';
 import request from 'supertest';
 import { buildContainer, type Container } from '../../src/container.js';
-import { createApp } from '../../src/http/app.js';
+import { createApp } from '../../src/app.js';
 import { signToken } from '../../src/http/auth.js';
 import { DevfileRegistryClient, createRegistryHttp } from '../../src/infra/devreg/DevfileRegistryClient.js';
 import { silentLogger, type Logger } from '../../src/utils/logger.js';

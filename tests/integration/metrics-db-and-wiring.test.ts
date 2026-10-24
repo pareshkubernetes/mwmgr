@@ -262,6 +262,8 @@ describe('production wiring', () => {
         'namespaces',
         'pats',
         'recorder',
+        'reconfigure',
+        'support',
         'registry',
         'workspaces',
       ].sort(),

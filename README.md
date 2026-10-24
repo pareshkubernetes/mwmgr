@@ -85,7 +85,7 @@ The terminal shows one readable entry per event: `time | LEVEL | event | details
 | white  | everything else (information, debug)                                                                    |
 
 ```text
-2026-10-24 00:55:44.025 | OK    | request                        | GET    /healthz -> 200 (6 ms)  requestId=258d…
+2026-10-24 00:55:44.025 | OK    | request                        | GET    /api/v1/healthz -> 200 (6 ms)  requestId=258d…
 2026-10-24 00:55:44.366 | WARN  | request                        | POST   /api/v1/login -> 401 (2 ms)  requestId=dc21…
 2026-10-24 00:55:44.479 | ERROR | request.failed
     requestId : d348d911-a444-4803-bc94-3b3affad830b
@@ -125,7 +125,7 @@ Errors are always `{ "error": string, "message": string, "code": string }`.
 | GET    | `/api/v1/:soeid/deployment-projects`    | List build/deploy projects                                     |
 | POST   | `/api/v1/:soeid/deployment-projects`    | `{csiid}` → 201 created, or 200 if it already exists           |
 | DELETE | `/api/v1/:soeid/deployment-projects`    | Delete all of the user's deployment projects                   |
-| GET    | `/healthz`, `/readyz`                   | Liveness (no dependencies) / readiness (Kubernetes + Postgres) |
+| GET    | `/api/v1/healthz`, `/api/v1/readyz`                   | Liveness (no dependencies) / readiness (Kubernetes + Postgres) |
 
 Create-workspace body:
 
@@ -142,15 +142,12 @@ Create-workspace body:
 
 `editor` is `vscode` (default), `intellij` or `goland`; the last three fields are optional.
 
-**Versioning.** `/api/v1` is the contract. A breaking change will ship as `/api/v2` next to it. The old unversioned
-paths (`/login`, `/:soeid/...`) still work as **deprecated aliases** (`Deprecation: true`,
-`Link: </api/v1/...>; rel="successor-version"`) so Orion keeps working while it migrates. Turn them off with
-`LEGACY_UNVERSIONED_ROUTES=false`.
+**Versioning.** Every endpoint is served only under `/api/v1`, including health/readiness probes. Unversioned URLs return 404. See [API and code map](docs/API.md) for routers, controllers, administrative APIs, runtime configuration and log search.
 
 ## Architecture
 
 ```
-http (routes, auth, validation)  →  services (rules)  →  ports ← infra (Kubernetes, Postgres, registry, email)
+app → routers/index → feature routers → controllers  →  services (rules)  →  ports ← infra (Kubernetes, Postgres, registry, email)
                                          ↓
                                    factories (pure) , utils , constants
 ```
@@ -172,7 +169,7 @@ cluster before first release (see "Not verified").
 ## Hand-over to another computer (`recreate-app.sh`, `all-app-code.txt`)
 
 The app moves between computers as **one text file**, `all-app-code.txt`, and one script, `recreate-app.sh`.
-The text file is made for you (by Claude, with `tools/build-all-code.sh`); you only run the script:
+Build the text file with `tools/build-all-code.sh`; on the destination computer, run:
 
 ```bash
 bash recreate-app.sh -f             # inside the app folder: writes the files of ./all-app-code.txt, overwriting
@@ -192,7 +189,7 @@ bash recreate-app.sh p.txt ./out    # another input file / another folder (exist
 - **Safe:** the text file ends with a SHA-256 for every file; they are all checked in a temp folder before your files are
   touched. Existing files that differ are kept unless you pass `-f`. Paths that could escape the folder are rejected.
   `recreate-app.sh` never replaces itself while running; a newer version is saved as `recreate-app.sh.new`.
-- **Never in a hand-over:** `node_modules`, `dist`, `coverage`, `.git`, `legacy`, `tools`, `.env*` (secrets), private keys.
+- **Never in a hand-over:** `node_modules`, `dist`, `coverage`, `.git`, `tools`, `.env*` (secrets), private keys.
 - **For the maintainer:** `bash tools/build-all-code.sh` builds the next hand-over (entire app the first time, then
   only changes; `--full`, `--list`, `--redo` and `--keep-state` exist). What the other computer has is remembered in
   `.handover-state` (not committed). Before saving, the file is recreated in a temp folder and compared byte for byte.
@@ -214,14 +211,6 @@ these were decided without them:
   Tokens with `role: user` are limited to their own `:soeid`.
 - **Status codes** follow REST: login failure is `401` (was `400`), PAT create is `201`.
 - **Git username** is `<soeid><GITHUB_USER_SUFFIX>` (legacy used `<soeid>_citi`).
-
-## Intentionally not ported
-
-`legacy/` keeps the original files. Not carried over because they were dead, broken or out of scope:
-`Mix-Code.ts` (PVC wait experiment), `find-resources.ts` (index-based resource sum, replaced by
-`summarizeComponents`), `remove-workspace-code.ts` (stand-alone script), `t.ts` (empty),
-`devfileConverter.ts` (not used once workspaces are inlined). Out of scope for now: the 15-day idle cleanup cron,
-OpenShift cluster metrics, the dashboard aggregation tables/queries (`prompt/*.md`).
 
 ## Not verified
 

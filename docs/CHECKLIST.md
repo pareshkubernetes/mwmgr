@@ -6,7 +6,7 @@ Tick items as they are completed. Items map to [PROJECT_RULES.md](./PROJECT_RULE
 
 - [x] Read legacy code, prompts and screenshots; list behaviours to keep (see README "Intentionally not ported")
 - [x] Write rules and this checklist
-- [x] Move legacy code to `legacy/` (kept for reference, excluded from build)
+- [x] Remove archived legacy source and unversioned route support
 - [x] Decide defaults for unknowns and document them (README "Assumptions")
 
 ## B. Scaffolding
@@ -52,8 +52,8 @@ Tick items as they are completed. Items map to [PROJECT_RULES.md](./PROJECT_RULE
 ## F. HTTP
 
 - [x] JWT auth middleware (Bearer, HS256, role + soeid ownership)
-- [x] URI versioning: everything under `/api/v1`; unversioned paths only as deprecated aliases
-- [x] `/api/v1/login`, `/api/v1/catalog`, `/healthz`, `/readyz`
+- [x] URI versioning: everything under `/api/v1`; unversioned paths return 404
+- [x] `/api/v1/login`, `/api/v1/catalog`, `/api/v1/healthz`, `/api/v1/readyz`
 - [x] `/api/v1/:soeid/projects`
 - [x] `/api/v1/:soeid/workspaces` CRUD + start/stop
 - [x] `/api/v1/:soeid/pats`, `/api/v1/:soeid/gitconfig`, `/api/v1/:soeid/deployment-projects`

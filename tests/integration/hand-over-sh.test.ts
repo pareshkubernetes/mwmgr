@@ -436,6 +436,20 @@ describe.skipIf(!bash || !hasBuilder)('tools/build-all-code.sh → recreate-app.
     expect(listed().length).toBe(ALL.length + 2);
   });
 
+  it('includes removals in a full snapshot when updating an existing installation', () => {
+    expect(build().code).toBe(0);
+    const target = tmp('full-update');
+    expect(sh(proj, 'recreate-app.sh', ['all-app-code.txt', target]).code).toBe(0);
+    rmSync(join(proj, 'src/a.ts'));
+    expect(build(['--full']).code).toBe(0);
+    expect(readFileSync(join(proj, 'all-app-code.txt'), 'utf8')).toContain('/_REMOVED.txt\n/src/a.ts');
+    expect(sh(proj, 'recreate-app.sh', ['-f', '--prune', 'all-app-code.txt', target]).code).toBe(0);
+    expect(existsSync(join(target, 'src/a.ts'))).toBe(false);
+    for (const path of ALL.filter(path => path !== 'src/a.ts')) {
+      expect(readFileSync(join(target, path)).equals(readFileSync(join(proj, path)))).toBe(true);
+    }
+  });
+
   it('refuses to pack a private key and never packs secrets', () => {
     put(proj, 'certs/dev.pem', '-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n');
     expect(build().code).toBe(0);

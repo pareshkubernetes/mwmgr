@@ -1,5 +1,5 @@
 import axios, { type AxiosInstance } from 'axios';
-import type { CatalogEntry } from '../../domain/types.js';
+import type { CatalogEntry } from '../../types.js';
 import { UpstreamError, WorkspaceConfigNotFoundError } from '../../utils/errors.js';
 import { describeError } from '../../utils/k8s-errors.js';
 import type { DevfileRegistry } from '../ports.js';

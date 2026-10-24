@@ -1,4 +1,5 @@
 import { formatPretty, type LogKind } from './log-format.js';
+import { appendDailyLog } from '../config/daily-logs.js';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'silent';
 export type LogFormat = 'json' | 'pretty';
@@ -21,6 +22,7 @@ export interface Logger {
 export type LogSink = (line: string) => void;
 
 export interface LoggerOptions {
+  dailyFiles?: boolean;
   /** `json` (one JSON object per line, for log collectors; the default here) or `pretty` (terminal). */
   format?: LogFormat;
   /** ANSI colours for the pretty format: error red, warn orange, success green, everything else white. */
@@ -59,6 +61,8 @@ export function createLogger(
       ...(redact(fields ?? {}) as LogFields),
     };
     const time = now();
+    if (options.dailyFiles)
+      appendDailyLog(JSON.stringify({ ...merged, time: time.toISOString(), level: severity, event }), time);
     if (format === 'pretty') {
       sink(formatPretty({ time, kind, event, fields: merged }, options.color === true));
       return;

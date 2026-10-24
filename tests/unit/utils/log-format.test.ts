@@ -111,7 +111,7 @@ describe('layout', () => {
 
   it('leaves out fields that have no value (a request without a user)', () => {
     const out = plain(
-      entry('success', 'request', { method: 'GET', path: '/healthz', status: 200, ms: 1, soeid: undefined }),
+      entry('success', 'request', { method: 'GET', path: '/api/v1/healthz', status: 200, ms: 1, soeid: undefined }),
     );
     expect(out).not.toContain('soeid');
     expect(out).not.toContain('undefined');

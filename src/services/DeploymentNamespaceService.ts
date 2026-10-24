@@ -9,7 +9,7 @@ import {
   LABEL_CSIID,
   LABEL_DEPLOYMENT_NAMESPACE,
 } from '../constants/kubernetes-configs.js';
-import type { KubeObject } from '../domain/types.js';
+import type { KubeObject } from '../types.js';
 import type { KubeGateway, Notifier } from '../infra/ports.js';
 import { errorMessage } from '../utils/errors.js';
 import { silentLogger, type Logger } from '../utils/logger.js';
@@ -84,10 +84,7 @@ export class DeploymentNamespaceService {
     });
     const name = project.metadata?.name ?? desired;
 
-    await this.kube.apply('ResourceQuota', name, DEPLOYMENT_RESOURCE_QUOTA_COMPUTE_CONFIG);
-    await this.kube.apply('LimitRange', name, DEPLOYMENT_LIMIT_RANGE_DEFAULT_CONFIG);
-    await this.kube.apply('ResourceQuota', name, DEPLOYMENT_RESOURCE_QUOTA_STORAGE_CONFIG);
-    await this.grantAccess(soeid, name);
+    await this.reconcile(soeid, name);
     this.logger.success('deployment_namespace.created', { soeid, namespace: name });
     return name;
   }
@@ -98,6 +95,13 @@ export class DeploymentNamespaceService {
       await this.kube.apply('Role', namespace, role);
       await this.kube.apply('RoleBinding', namespace, this.binding(soeid, namespace, roleName));
     }
+  }
+
+  async reconcile(soeid: string, namespace: string): Promise<void> {
+    await this.kube.apply('ResourceQuota', namespace, DEPLOYMENT_RESOURCE_QUOTA_COMPUTE_CONFIG);
+    await this.kube.apply('LimitRange', namespace, DEPLOYMENT_LIMIT_RANGE_DEFAULT_CONFIG);
+    await this.kube.apply('ResourceQuota', namespace, DEPLOYMENT_RESOURCE_QUOTA_STORAGE_CONFIG);
+    await this.grantAccess(soeid, namespace);
   }
 
   private binding(soeid: string, namespace: string, roleName: string): KubeObject {

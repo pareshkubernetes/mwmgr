@@ -1,4 +1,4 @@
-import type { DevWorkspaceResource, KubeObject } from '../../src/domain/types.js';
+import type { DevWorkspaceResource, KubeObject } from '../../src/types.js';
 import type { KubeGateway, NamespacedKind } from '../../src/infra/ports.js';
 import { ConflictError, NotFoundError } from '../../src/utils/errors.js';
 

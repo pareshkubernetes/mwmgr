@@ -1,4 +1,4 @@
-import type { CatalogEntry, DevWorkspaceResource, KubeObject, MetricsRecord } from '../domain/types.js';
+import type { CatalogEntry, DevWorkspaceResource, KubeObject, MetricsRecord } from '../types.js';
 
 export type NamespacedKind =
   | 'Secret'
@@ -13,6 +13,7 @@ export type NamespacedKind =
 
 /** Everything the services need from Kubernetes/OpenShift. Implemented by KubeClient and by the in-memory fake. */
 export interface KubeGateway {
+  applyCluster?(kind: 'ClusterRole' | 'ClusterRoleBinding', body: KubeObject): Promise<KubeObject>;
   listNamespaces(labelSelector?: string): Promise<KubeObject[]>;
   getNamespace(name: string): Promise<KubeObject | null>;
   createNamespace(body: KubeObject): Promise<KubeObject>;

@@ -1,5 +1,5 @@
-import { dump, load } from 'js-yaml';
-import type { Devfile, EditorKey } from '../domain/types.js';
+import { load } from 'js-yaml';
+import type { Devfile, EditorKey } from '../types.js';
 import { BadRequestError } from '../utils/errors.js';
 
 interface EditorProfile {
@@ -97,8 +97,4 @@ export function applyEditorProfile(
   if (home?.volume) home.volume.size = homeVolumeSize;
 
   return updated;
-}
-
-export function updateDevfileYaml(yamlText: string, editor: EditorKey): string {
-  return dump(applyEditorProfile(parseDevfile(yamlText), editor), { indent: 2 });
 }

@@ -10,31 +10,31 @@ beforeAll(async () => {
 });
 afterAll(() => it$.close());
 
-describe('operational endpoints (unversioned)', () => {
-  it('/healthz is OK and never touches dependencies', async () => {
+describe('versioned operational endpoints', () => {
+  it('/api/v1/healthz is OK and never touches dependencies', async () => {
     it$.fakes.kube.failOnce('ping', new Error('would fail'));
-    const res = await request(it$.app).get('/healthz');
+    const res = await request(it$.app).get('/api/v1/healthz');
     expect(res.status).toBe(200);
     expect(res.text).toBe('OK');
     expect(it$.fakes.kube.calls).not.toContain('ping');
     await expect(it$.fakes.kube.ping()).rejects.toThrow('would fail'); // consume the armed failure
   });
 
-  it('/readyz reports ready when kubernetes and postgres answer', async () => {
-    const res = await request(it$.app).get('/readyz');
+  it('/api/v1/readyz reports ready when kubernetes and postgres answer', async () => {
+    const res = await request(it$.app).get('/api/v1/readyz');
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ status: 'ready', checks: { kubernetes: 'ok', postgres: 'ok' } });
   });
 
-  it('/readyz reports 503 when the cluster is unreachable', async () => {
+  it('/api/v1/readyz reports 503 when the cluster is unreachable', async () => {
     it$.fakes.kube.failOnce('ping', new Error('connection refused'));
-    const res = await request(it$.app).get('/readyz');
+    const res = await request(it$.app).get('/api/v1/readyz');
     expect(res.status).toBe(503);
     expect(res.body).toEqual({ status: 'not-ready', checks: { kubernetes: 'unavailable', postgres: 'ok' } });
   });
 
-  it('/api/v1/healthz does not exist: probes stay unversioned', async () => {
-    expect((await request(it$.app).get('/api/v1/healthz')).status).toBe(401);
+  it('unversioned probes are removed', async () => {
+    expect((await request(it$.app).get('/healthz')).status).toBe(404);
   });
 });
 
@@ -120,17 +120,12 @@ describe('versioning', () => {
     expect(res.headers.deprecation).toBeUndefined();
   });
 
-  it('still serves the unversioned paths as deprecated aliases', async () => {
-    const res = await it$.api('get', '/pp1/workspaces');
-    expect(res.status).toBe(200);
-    expect(res.headers.deprecation).toBe('true');
-    expect(res.headers.link).toBe('</api/v1/pp1/workspaces>; rel="successor-version"');
+  it('rejects unversioned user paths', async () => {
+    expect((await it$.api('get', '/pp1/workspaces')).status).toBe(404);
   });
 
-  it('serves the legacy login path too', async () => {
-    const res = await request(it$.app).post('/login').send(ADMIN);
-    expect(res.status).toBe(200);
-    expect(res.headers.deprecation).toBe('true');
+  it('rejects unversioned login', async () => {
+    expect((await request(it$.app).post('/login').send(ADMIN)).status).toBe(404);
   });
 
   it('an unknown API version is a 404, not a user lookup', async () => {
@@ -143,28 +138,17 @@ describe('versioning', () => {
     const res = await it$.api('get', '/api/v1/pp1/nothing-here');
     expect(res.status).toBe(404);
   });
-
-  it('can switch the legacy aliases off', async () => {
-    const strict = await startIntegration({ LEGACY_UNVERSIONED_ROUTES: 'false' });
-    try {
-      expect((await request(strict.app).post('/login').send(ADMIN)).status).toBe(404);
-      expect((await request(strict.app).post('/api/v1/login').send(ADMIN)).status).toBe(200);
-      expect((await strict.api('get', '/pp1/workspaces')).status).toBe(404);
-    } finally {
-      await strict.close();
-    }
-  });
 });
 
 describe('request ids', () => {
   it('echoes a safe incoming x-request-id and generates one otherwise', async () => {
-    const given = await request(it$.app).get('/healthz').set('x-request-id', 'abc-12345678');
+    const given = await request(it$.app).get('/api/v1/healthz').set('x-request-id', 'abc-12345678');
     expect(given.headers['x-request-id']).toBe('abc-12345678');
-    const generated = await request(it$.app).get('/healthz').set('x-request-id', 'bad id with spaces');
+    const generated = await request(it$.app).get('/api/v1/healthz').set('x-request-id', 'bad id with spaces');
     expect(generated.headers['x-request-id']).toMatch(/^[0-9a-f-]{36}$/);
   });
 
   it('does not advertise the framework', async () => {
-    expect((await request(it$.app).get('/healthz')).headers['x-powered-by']).toBeUndefined();
+    expect((await request(it$.app).get('/api/v1/healthz')).headers['x-powered-by']).toBeUndefined();
   });
 });

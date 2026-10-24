@@ -9,9 +9,9 @@ These rules are binding for every change. If a rule must be broken, say why in t
 
 ## 1. Architecture
 
-1. **Layers, strictly top-down:** `http` → `services` → `infra`/`factories` → `domain`/`utils`.
+1. **Layers, strictly top-down:** `routers` → `controllers` → `services` → `infra`/`factories` → `types`/`utils`.
    A lower layer never imports from a higher one.
-2. **`http`** only parses/validates input, calls one service method, and maps the result or
+2. **`controllers`** only parses/validates input, calls one service method, and maps the result or
    error to a response. No Kubernetes, SQL or business rules in routes.
 3. **`services`** own business rules (limits, ordering of steps, naming, metrics events).
    They depend on **ports** (interfaces), never on concrete clients.
@@ -21,7 +21,7 @@ These rules are binding for every change. If a rule must be broken, say why in t
 6. **One composition root** (`src/container.ts`) wires adapters into services. Nothing else
    calls `new` on an adapter. Tests build the container with fakes.
 7. No module-level side effects (no connecting to a DB, reading files, or reading `process.env`
-   at import time). Config is read once in `src/config/env.ts` and passed in.
+   at import time). Startup config is read in `src/config/env.ts` and passed in; administrator runtime updates rebuild services.
 
 ## 2. Language and style
 
@@ -31,7 +31,7 @@ These rules are binding for every change. If a rule must be broken, say why in t
 3. Prefer `async/await`. No `.then().catch()` chains.
 4. Functions are small and single-purpose. A service method that needs a comment block to
    explain its steps should be split.
-5. Names: `camelCase` values, `PascalCase` types/classes, `kebab-case.ts` filenames for modules
+5. Names: `camelCase` values, `PascalCase` types/classes, feature-matched `*Router.ts` / `*Controller.ts` filenames for HTTP modules; `kebab-case.ts` for other modules
    that export functions, `PascalCase.ts` for files whose main export is a class.
 6. Comments explain _why_, not _what_. No commented-out code, no TODO without an issue id.
 7. `eslint` and `prettier` must pass with zero warnings.
@@ -109,23 +109,21 @@ These rules are binding for every change. If a rule must be broken, say why in t
 1. **URI versioning, industry standard:** every API route is served under `/api/v1`
    (`/api/v1/login`, `/api/v1/catalog`, `/api/v1/:soeid/workspaces[/:id[/start|/stop]]`, ...).
    Path structure after the prefix is identical to the pre-versioning layout.
-   Operational probes `/healthz` and `/readyz` are unversioned.
+   Operational probes also use the version prefix.
 2. Within a major version changes are additive only (new routes, new optional fields).
    A breaking change ships as `/api/v2` alongside `v1`; `v1` is then deprecated, never edited in place.
-3. The pre-versioning paths (`/login`, `/:soeid/...`) exist only as deprecated aliases of `v1`
-   (`Deprecation: true` and a `Link: rel="successor-version"` header) controlled by
-   `LEGACY_UNVERSIONED_ROUTES`. Remove them once Orion has migrated.
+3. Unversioned routes return 404. There is no legacy router or compatibility switch.
 4. Request bodies are validated with `zod`; unknown properties are rejected.
 5. `409` for limit/conflict, `404` unknown resource, `400` invalid input, `401/403` auth,
    `502` upstream (cluster/registry) failure, `500` everything else.
 
 ## 9. Operations
 
-1. `/healthz` (liveness) never touches dependencies. `/readyz` checks Kubernetes API and
+1. `/api/v1/healthz` (liveness) never touches dependencies. `/api/v1/readyz` checks Kubernetes API and
    Postgres reachability.
 2. Logs are one entry per event with `requestId`, `soeid`, `event`. Terminal format (`LOG_FORMAT=pretty`, the default) is readable and coloured: errors red, warnings orange, successes green, everything else white; `LOG_FORMAT=json` gives structured JSON lines. Use `logger.success` for something that worked, `warn` for a problem the caller or the setup caused, `error` for a failure on our side.
 3. Graceful shutdown on `SIGTERM`: stop accepting, drain, close the DB pool.
-4. Config via environment variables only; every variable is documented in `.env.example`.
+4. Startup config uses environment variables documented in `.env.example`. Administrator runtime settings are process-local; see `API.md`.
 5. Container runs as non-root, read-only root filesystem compatible.
 
 ## 10. Git and review

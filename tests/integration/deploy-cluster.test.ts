@@ -60,21 +60,21 @@ describe('workspaces stay on the Dev Spaces cluster, deployment projects go to t
 
 describe('readiness checks both clusters when they are different', () => {
   it('reports each cluster', async () => {
-    const res = await request(t.app).get('/readyz');
+    const res = await request(t.app).get('/api/v1/readyz');
     expect(res.status).toBe(200);
     expect(res.body.checks).toEqual({ kubernetes: 'ok', deployCluster: 'ok', postgres: 'ok' });
   });
 
   it('is not ready when only the deploy cluster is down', async () => {
     deploy.failOnce('ping', new Error('deploy cluster unreachable'));
-    const res = await request(t.app).get('/readyz');
+    const res = await request(t.app).get('/api/v1/readyz');
     expect(res.status).toBe(503);
     expect(res.body.checks).toEqual({ kubernetes: 'ok', deployCluster: 'unavailable', postgres: 'ok' });
   });
 
   it('is not ready when only the Dev Spaces cluster is down', async () => {
     t.fakes.kube.failOnce('ping', new Error('dev spaces cluster unreachable'));
-    const res = await request(t.app).get('/readyz');
+    const res = await request(t.app).get('/api/v1/readyz');
     expect(res.status).toBe(503);
     expect(res.body.checks).toEqual({ kubernetes: 'unavailable', deployCluster: 'ok', postgres: 'ok' });
   });
@@ -89,7 +89,7 @@ describe('with a single cluster (the default, as in the team’s current environ
         201,
       );
       expect(single.fakes.kube.namespaces.has('pp1-devspaces-deploy-5')).toBe(true);
-      const ready = await request(single.app).get('/readyz');
+      const ready = await request(single.app).get('/api/v1/readyz');
       expect(ready.body.checks).toEqual({ kubernetes: 'ok', postgres: 'ok' });
     } finally {
       await single.close();

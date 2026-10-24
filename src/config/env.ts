@@ -21,7 +21,6 @@ const schema = z.object({
   ADMIN_USERNAME: z.string().min(1, 'ADMIN_USERNAME is required'),
   ADMIN_PASSWORD: z.string().min(1, 'ADMIN_PASSWORD is required'),
   JWT_EXPIRES_IN: z.string().default('60d'),
-  LEGACY_UNVERSIONED_ROUTES: flag('true'),
 
   CLUSTER_API_URL: z.string().default(''),
   // Optional second cluster for the build/deploy projects; when unset the same cluster is used.
@@ -140,8 +139,6 @@ export interface AppConfig {
   logFormat: 'pretty' | 'json';
   /** ANSI colours in the pretty log format. */
   logColor: boolean;
-  /** Serve the pre-versioning paths (/login, /:soeid/...) as deprecated aliases of /api/v1. */
-  legacyRoutes: boolean;
   auth: { secretKey: string; adminUsername: string; adminPassword: string; expiresIn: string };
   cluster: {
     /** The Dev Spaces cluster. */
@@ -274,7 +271,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     logLevel: e.LOG_LEVEL,
     logFormat: e.LOG_FORMAT,
     logColor: e.LOG_COLOR && !cleaned.NO_COLOR,
-    legacyRoutes: e.LEGACY_UNVERSIONED_ROUTES,
     auth: {
       secretKey: e.SECRET_KEY,
       adminUsername: e.ADMIN_USERNAME,

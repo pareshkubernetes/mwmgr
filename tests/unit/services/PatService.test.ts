@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import type { KubeObject } from '../../../src/domain/types.js';
+import type { KubeObject } from '../../../src/types.js';
 import { MetricsRecorder } from '../../../src/services/MetricsRecorder.js';
 import { NamespaceService } from '../../../src/services/NamespaceService.js';
 import { PatService, assertValidGithubToken, maskToken } from '../../../src/services/PatService.js';

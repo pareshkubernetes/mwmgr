@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { AppConfig } from '../../../src/config/env.js';
-import type { MetricsRecord } from '../../../src/domain/types.js';
+import type { MetricsRecord } from '../../../src/types.js';
 import {
   MetricsRepository,
   NoopMetricsStore,

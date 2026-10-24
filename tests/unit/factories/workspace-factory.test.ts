@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Devfile } from '../../../src/domain/types.js';
+import type { Devfile } from '../../../src/types.js';
 import { buildLogRecord } from '../../../src/factories/log-factory.js';
 import { buildDevWorkspaceObject, WORKSPACE_LABELS } from '../../../src/factories/workspace-factory.js';
 import { parseDevfile } from '../../../src/factories/devfile-updater.js';

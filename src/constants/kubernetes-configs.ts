@@ -1,4 +1,4 @@
-import type { KubeObject } from '../domain/types.js';
+import type { KubeObject } from '../types.js';
 
 export const LABEL_COMPONENT = 'app.kubernetes.io/component';
 export const LABEL_WORKSPACES_NAMESPACE = 'workspaces-namespace';
@@ -7,7 +7,6 @@ export const ANNOTATION_CHE_USERNAME = 'che.eclipse.org/username';
 export const LABEL_CSIID = 'devspaces.citi.com/csiid';
 
 export const WORKSPACES_NAMESPACE_SELECTOR = `${LABEL_COMPONENT}=${LABEL_WORKSPACES_NAMESPACE}`;
-export const DEPLOYMENT_NAMESPACE_SELECTOR = `${LABEL_COMPONENT}=${LABEL_DEPLOYMENT_NAMESPACE}`;
 
 // ---------------------------------------------------------------------------------------------
 // Workspace namespaces

@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { newDb } from 'pg-mem';
 import { loadConfig, type AppConfig } from '../../src/config/env.js';
 import { buildContainer, type Container, type Dependencies } from '../../src/container.js';
-import { createApp } from '../../src/http/app.js';
+import { createApp } from '../../src/app.js';
 import { MetricsRepository } from '../../src/infra/db/MetricsRepository.js';
 import { silentLogger } from '../../src/utils/logger.js';
 import { FakeClock, FakeMetricsStore, FakeNotifier, FakeRegistry } from './fakes.js';

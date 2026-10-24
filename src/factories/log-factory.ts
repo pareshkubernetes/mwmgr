@@ -1,9 +1,9 @@
-import type { MetricsRecord } from '../domain/types.js';
+import type { MetricsRecord } from '../types.js';
 
 export type MetricsInput = Pick<MetricsRecord, 'soeid' | 'eventtype' | 'resourcetype'> &
   Partial<MetricsRecord>;
 
-/** Fill a metrics row with the same defaults the legacy log factory used. */
+/** Default values for a metrics row. */
 export function buildLogRecord(data: MetricsInput, now: Date = new Date()): MetricsRecord {
   return {
     timestamp: data.timestamp ?? now,

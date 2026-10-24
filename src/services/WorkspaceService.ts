@@ -1,5 +1,5 @@
 import type { AppConfig } from '../config/env.js';
-import type { CreateWorkspaceInput, DevWorkspaceResource, EditorKey, Workspace } from '../domain/types.js';
+import type { CreateWorkspaceInput, DevWorkspaceResource, EditorKey, Workspace } from '../types.js';
 import { applyEditorProfile, parseDevfile } from '../factories/devfile-updater.js';
 import { buildDevWorkspaceObject, WORKSPACE_LABELS } from '../factories/workspace-factory.js';
 import { systemClock, type Clock, type DevfileRegistry, type KubeGateway } from '../infra/ports.js';

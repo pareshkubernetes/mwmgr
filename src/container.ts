@@ -18,6 +18,7 @@ import { MetricsRecorder } from './services/MetricsRecorder.js';
 import { NamespaceService } from './services/NamespaceService.js';
 import { PatService } from './services/PatService.js';
 import { WorkspaceService } from './services/WorkspaceService.js';
+import { SupportService } from './services/SupportService.js';
 import type { Logger } from './utils/logger.js';
 
 export interface Dependencies {
@@ -31,6 +32,7 @@ export interface Dependencies {
 }
 
 export interface Container {
+  reconfigure(config: AppConfig): void;
   config: AppConfig;
   logger: Logger;
   kube: KubeGateway;
@@ -44,10 +46,16 @@ export interface Container {
   pats: PatService;
   gitConfig: GitConfigService;
   deployments: DeploymentNamespaceService;
+  support: SupportService;
 }
 
-/** The single place where adapters are wired into services. Tests call this with fakes. */
-export function buildContainer(config: AppConfig, logger: Logger, deps: Dependencies): Container {
+/** Wire services to production adapters or test doubles. */
+export function buildContainer(
+  config: AppConfig,
+  logger: Logger,
+  deps: Dependencies,
+  refresh?: (config: AppConfig) => Dependencies,
+): Container {
   const clock = deps.clock ?? systemClock;
   const recorder = new MetricsRecorder(deps.metrics, clock, logger);
   const namespaces = new NamespaceService(
@@ -56,7 +64,19 @@ export function buildContainer(config: AppConfig, logger: Logger, deps: Dependen
     { workspaceProxyUrl: config.devreg.workspaceProxyUrl, emailDomain: config.notification.emailDomain },
     logger,
   );
-  return {
+  const deployments = new DeploymentNamespaceService(
+    deps.deployKube ?? deps.kube,
+    recorder,
+    deps.notifier,
+    config.cluster.deployProjectRequester,
+    logger,
+  );
+  const container: Container = {
+    reconfigure(next) {
+      const nextDependencies = refresh ? refresh(next) : deps;
+      const reconfigure = container.reconfigure;
+      Object.assign(container, buildContainer(next, logger, nextDependencies, refresh), { reconfigure });
+    },
     config,
     logger,
     kube: deps.kube,
@@ -80,14 +100,16 @@ export function buildContainer(config: AppConfig, logger: Logger, deps: Dependen
     ),
     pats: new PatService(deps.kube, namespaces, recorder, config.github),
     gitConfig: new GitConfigService(deps.kube, namespaces, recorder),
-    deployments: new DeploymentNamespaceService(
-      deps.deployKube ?? deps.kube,
-      recorder,
-      deps.notifier,
-      config.cluster.deployProjectRequester,
+    deployments,
+    support: new SupportService({
+      kube: deps.kube,
+      deployKube: deps.deployKube ?? deps.kube,
+      namespaces,
+      deployments,
       logger,
-    ),
+    }),
   };
+  return container;
 }
 
 /** Real adapters for a running pod. */

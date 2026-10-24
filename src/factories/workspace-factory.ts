@@ -1,4 +1,4 @@
-import type { Devfile, DevWorkspaceResource, EditorKey } from '../domain/types.js';
+import type { Devfile, DevWorkspaceResource, EditorKey } from '../types.js';
 
 export const WORKSPACE_LABELS = {
   csiid: 'devspaces.citi.com/csiid',

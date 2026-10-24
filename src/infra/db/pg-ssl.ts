@@ -5,20 +5,20 @@ import type { AppConfig } from '../../config/env.js';
 
 type PgConfig = AppConfig['postgres'];
 
-/** Same mapping the original service used: one CA bundle per environment. */
+/** CA bundle names by environment. */
 const CERT_FILES: Record<string, string> = {
   development: 'dev.pem',
   uat: 'uat.pem',
   production: 'prod.pem',
 };
 
-/** Directory used by the original service when running in a container. */
+/** Default certificate directory in the container. */
 const CONTAINER_CERT_DIR = '/app/backend/cert';
 
 /**
  * Which CA bundle to trust: an explicit POSTGRES_CA_FILE, else `<certDir>/<dev|uat|prod>.pem` chosen by NODE_ENV
  * (unknown environments fall back to dev.pem). `certDir` defaults to `./certs` in development and
- * `/app/backend/cert` otherwise, as in the original code.
+ * `/app/backend/cert` otherwise.
  */
 export function resolveCaPath(
   config: Pick<PgConfig, 'env' | 'caFile' | 'certDir'>,

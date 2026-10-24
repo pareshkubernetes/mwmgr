@@ -1,11 +1,7 @@
-import { load } from 'js-yaml';
+import { dump, load } from 'js-yaml';
 import { describe, expect, it } from 'vitest';
-import type { Devfile } from '../../../src/domain/types.js';
-import {
-  applyEditorProfile,
-  parseDevfile,
-  updateDevfileYaml,
-} from '../../../src/factories/devfile-updater.js';
+import type { Devfile } from '../../../src/types.js';
+import { applyEditorProfile, parseDevfile } from '../../../src/factories/devfile-updater.js';
 import { BadRequestError } from '../../../src/utils/errors.js';
 import { SAMPLE_DEVFILE_YAML } from '../../helpers/sample-devfile.js';
 
@@ -95,9 +91,9 @@ describe('applyEditorProfile', () => {
   });
 });
 
-describe('updateDevfileYaml', () => {
+describe('editor profile YAML serialization', () => {
   it('round-trips through YAML', () => {
-    const out = load(updateDevfileYaml(SAMPLE_DEVFILE_YAML, 'goland')) as Devfile;
+    const out = load(dump(applyEditorProfile(parseDevfile(SAMPLE_DEVFILE_YAML), 'goland'))) as Devfile;
     expect(byName(out, 'che-goland-server')).toBeDefined();
   });
 });

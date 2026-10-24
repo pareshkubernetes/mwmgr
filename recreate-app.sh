@@ -286,7 +286,7 @@ main() {
 
   # ---- 6. what to do next, only when needed ------------------------------------------------------------------
   local NEXT=()
-  grep -Eq '^/package(-lock)?\.json$' "$STAGE/applied" && NEXT+=("npm install              (package.json changed)")
+  grep -Eq '^/package(-lock)?\.json$' "$STAGE/applied" && NEXT+=("npm install              (use the configured internal npm repository)")
   grep -Eq '^/(src/|tsconfig|vitest\.config|eslint\.config)' "$STAGE/applied" && NEXT+=("npm run build            (source changed)")
   grep -Eq '^/tests/' "$STAGE/applied" && NEXT+=("npm test                 (tests changed)")
   grep -Eq '^/\.env\.example$' "$STAGE/applied" && NEXT+=("compare .env.example with your environment variables (new settings may have been added)")

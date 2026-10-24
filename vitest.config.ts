@@ -31,7 +31,7 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts'],
-      exclude: ['src/index.ts', 'src/infra/ports.ts', 'src/domain/**'],
+      exclude: ['src/index.ts', 'src/infra/ports.ts', 'src/types.ts'],
       reporter: ['text-summary', 'html', 'lcov'],
       thresholds: { lines: 85, branches: 75, functions: 85, statements: 85 },
     },

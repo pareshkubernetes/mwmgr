@@ -33,11 +33,11 @@ const strip = (line: string) =>
 
 describe('what the terminal shows for each API call', () => {
   it('a successful call is green, with method, path, status and duration', async () => {
-    await request(t.app).get('/healthz');
-    const line = await requestLine('/healthz');
+    await request(t.app).get('/api/v1/healthz');
+    const line = await requestLine('/api/v1/healthz');
     expect(line?.startsWith(COLORS.success)).toBe(true);
     expect(strip(line as string)).toMatch(
-      /\| OK {4}\| request +\| GET +\/healthz -> 200 \(\d+ ms\) {2}requestId=[0-9a-f-]{36}$/,
+      /\| OK {4}\| request +\| GET +\/api\/v1\/healthz -> 200 \(\d+ ms\) {2}requestId=[0-9a-f-]{36}$/,
     );
   });
 

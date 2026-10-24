@@ -50,7 +50,7 @@ function caller(baseUrl: string, token?: string): Caller {
     try {
       parsed = JSON.parse(text);
     } catch {
-      /* plain text (e.g. /healthz) */
+      /* plain text (e.g. /api/v1/healthz) */
     }
     return { status: res.status, body: parsed, headers: res.headers };
   };
