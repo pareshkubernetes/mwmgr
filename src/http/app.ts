@@ -37,16 +37,19 @@ export function createApp(c: Container): Express {
     res.locals.requestId = requestId;
     res.setHeader('x-request-id', requestId);
     const started = Date.now();
-    res.on('finish', () =>
-      c.logger.info('request', {
-        requestId,
+    res.on('finish', () => {
+      // 5xx = we failed (red), 4xx = the caller's problem (orange), everything else = a successful call (green)
+      const outcome = res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'success';
+      c.logger[outcome]('request', {
         method: req.method,
-        path: req.path,
+        // originalUrl, not req.path: inside nested routers req.path is only the part after the mount point
+        path: req.originalUrl.split('?')[0],
         status: res.statusCode,
         ms: Date.now() - started,
+        requestId,
         soeid: res.locals.soeid as string | undefined,
-      }),
-    );
+      });
+    });
     next();
   });
 

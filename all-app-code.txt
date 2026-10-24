@@ -1,4 +1,4 @@
-# all-app-code.txt - updated files only - generated 2026-10-24T04:47:59Z
+# all-app-code.txt - updated files only - generated 2026-10-24T06:03:20Z
 # On the other computer, inside the app folder:   bash recreate-app.sh -f
 
 /.env.example
@@ -6,6 +6,10 @@
 PORT=8080
 NODE_ENV=development
 LOG_LEVEL=info
+# Terminal logs: pretty = readable lines, coloured (errors red, warnings orange, successes green, the rest white).
+# json = one JSON object per line, for a log collector. NO_COLOR=1 (or LOG_COLOR=false) switches the colours off.
+LOG_FORMAT=pretty
+# LOG_COLOR=false
 
 # ---- Auth (SECRET_KEY is REQUIRED) ----
 SECRET_KEY=change-me-to-a-long-random-string-of-at-least-16-chars
@@ -85,16 +89,6 @@ GITHUB_URL=https://github.com
 # Appended to the soeid to form the git username, e.g. _citi → pp58386_citi (empty = soeid only)
 GITHUB_USER_SUFFIX=
 
-/.gitignore
-node_modules/
-dist/
-coverage/
-.env
-.env.*
-!.env.example
-*.log
-.handover-state*
-
 /README.md
 # Workspace Mgr
 
@@ -170,6 +164,31 @@ Without a token the service uses `KUBECONFIG_PATH` (or the first command-line ar
 pod service account. `CLUSTER_TOKEN` and `DEPLOY_CLUSTER_TOKEN` set a token explicitly. The Dev Spaces dashboard address
 for the editor link is `DEV_SPACES_SERVICE_FQDN`, or `https://devspaces.apps.<cluster domain>` worked out from `CLUSTER_API_URL`.
 At startup the service logs what it understood (which variable supplied each token, never the token itself).
+
+## Logs
+
+The terminal shows one readable entry per event: `time | LEVEL | event | details`, the whole line coloured.
+
+| Colour | Meaning                                                                                                 |
+| ------ | ------------------------------------------------------------------------------------------------------- |
+| green  | something succeeded: a call that returned 2xx/3xx, a workspace created/started/stopped/deleted, startup |
+| orange | warnings: a call the caller got wrong (4xx), TLS checking switched off, a table with missing columns    |
+| red    | errors: a call that failed on our side (5xx) and its cause, a failed e-mail, a database write failure   |
+| white  | everything else (information, debug)                                                                    |
+
+```text
+2026-10-24 00:55:44.025 | OK    | request                        | GET    /healthz -> 200 (6 ms)  requestId=258d…
+2026-10-24 00:55:44.366 | WARN  | request                        | POST   /api/v1/login -> 401 (2 ms)  requestId=dc21…
+2026-10-24 00:55:44.479 | ERROR | request.failed
+    requestId : d348d911-a444-4803-bc94-3b3affad830b
+    code      : UPSTREAM_ERROR
+    error     : Devfile registry catalog: No response received from server
+```
+
+Entries with a lot of detail (startup summary, errors) use indented `key : value` lines followed by a blank line, so
+entries never run together. Secrets (tokens, passwords) are never printed. `LOG_FORMAT=json` gives one JSON object
+per line for a log collector (a success carries `"outcome":"success"`), `NO_COLOR=1` or `LOG_COLOR=false` removes the
+colours, `LOG_LEVEL=debug|info|warn|error|silent` filters.
 
 ## API (version 1)
 
@@ -302,6 +321,143 @@ OpenShift cluster metrics, the dashboard aggregation tables/queries (`prompt/*.m
 - `docker build` was not run. The Helm chart (`helm/`) has no Deployment template and its folder is named
   `template`, not `templates`; it was left unchanged.
 
+/docs/PROJECT_RULES.md
+# Workspace Mgr — Project Rules
+
+Workspace Mgr is the backend/middleware between the Orion dashboard and OpenShift
+Dev Spaces. It creates, lists, starts, stops and deletes DevWorkspaces for a user,
+creates the user's project (namespace) when it does not exist, and records every
+action to Postgres for the Dev Spaces dashboard.
+
+These rules are binding for every change. If a rule must be broken, say why in the PR.
+
+## 1. Architecture
+
+1. **Layers, strictly top-down:** `http` → `services` → `infra`/`factories` → `domain`/`utils`.
+   A lower layer never imports from a higher one.
+2. **`http`** only parses/validates input, calls one service method, and maps the result or
+   error to a response. No Kubernetes, SQL or business rules in routes.
+3. **`services`** own business rules (limits, ordering of steps, naming, metrics events).
+   They depend on **ports** (interfaces), never on concrete clients.
+4. **`infra`** holds the concrete adapters (Kubernetes, Postgres, devfile registry, email).
+   Every adapter implements a port declared in `src/infra/ports.ts`.
+5. **`factories`** are pure functions (devfile → DevWorkspace, log records). No I/O.
+6. **One composition root** (`src/container.ts`) wires adapters into services. Nothing else
+   calls `new` on an adapter. Tests build the container with fakes.
+7. No module-level side effects (no connecting to a DB, reading files, or reading `process.env`
+   at import time). Config is read once in `src/config/env.ts` and passed in.
+
+## 2. Language and style
+
+1. TypeScript `strict: true`, ESM (`"module": "NodeNext"`). Local imports end in `.js`.
+2. No `any` except at a third-party boundary, and then it is narrowed immediately.
+   **No `// @ts-ignore`.** Use `// @ts-expect-error` with a reason if truly unavoidable.
+3. Prefer `async/await`. No `.then().catch()` chains.
+4. Functions are small and single-purpose. A service method that needs a comment block to
+   explain its steps should be split.
+5. Names: `camelCase` values, `PascalCase` types/classes, `kebab-case.ts` filenames for modules
+   that export functions, `PascalCase.ts` for files whose main export is a class.
+6. Comments explain _why_, not _what_. No commented-out code, no TODO without an issue id.
+7. `eslint` and `prettier` must pass with zero warnings.
+
+## 3. Errors
+
+1. Throw typed errors from `src/utils/errors.ts` (`AppError` subclasses). Each carries an HTTP
+   status and a stable `code`.
+2. Never swallow an error silently. Either handle it, record it, or rethrow it.
+   The only intentional swallow is the metrics recorder (rule 6.2), and it logs.
+3. Kubernetes/axios errors are translated to `AppError` at the adapter boundary
+   (`src/utils/k8s-errors.ts`). Callers never inspect `err.body.code`.
+4. Error responses always have the shape `{ "error": string, "message": string, "code": string }`.
+   Never return a stack trace or upstream response body to the client.
+
+## 4. Security
+
+1. `SECRET_KEY` is **required**; the process refuses to start without it. No fallback secret.
+2. Tokens: `Authorization: Bearer <jwt>` only. Verify with the explicit algorithm `HS256`.
+3. Admin credential comparison is constant-time (`crypto.timingSafeEqual`).
+4. Every `:soeid` and `:id` path parameter is validated against an allow-list pattern before it
+   is used in a namespace name, label selector or Kubernetes path.
+5. A caller may only act on their own `:soeid` unless the token has the `admin` role.
+6. Never log tokens, passwords, PAT values, or full request bodies. PAT values are masked
+   (`ghp_ab…xyz`) everywhere except the Secret itself.
+7. Secrets for Kubernetes and Postgres come from the environment / mounted files, never from
+   source or from git.
+8. All SQL is parameterised. No string-built queries.
+9. Kubernetes access uses the pod's service account with the minimum RBAC in
+   `kustomize.server/base/sa.yaml`; do not widen it without review.
+
+## 5. Kubernetes behaviour
+
+1. Operations are idempotent: "create or replace" for quotas, roles, bindings, ConfigMaps.
+2. Workspace namespaces are found by **label + annotation**, not by listing the whole cluster.
+   Deployment namespaces are created through OpenShift's `ProjectRequest`, which may not apply our labels, so
+   they are found by their deterministic name (`<soeid>-devspaces-deploy-<csiid>`).
+3. A workspace id is `metadata.name`; it is unique inside a user's namespaces.
+4. Poll loops have a hard timeout and an interval, are injectable (clock/sleep) for tests, and
+   fail with a typed error. They never silently "fix" state by restarting workspaces.
+5. Deleting something that is already gone is a success.
+
+## 6. Metrics (Postgres)
+
+1. Every user-visible action (create/delete/start/stop of workspace; create/delete of project;
+   PAT/gitconfig changes) records one row to `metrics."devspaces-metrics"`, success **or** failure.
+2. Recording is best-effort: a database failure is logged and must never fail or delay the
+   user's action beyond a short timeout.
+3. The row shape is defined once (`MetricsRecord`). The metrics table **already exists** and is owned by the
+   database team: the service never issues DDL (no `CREATE`, `ALTER`, `DROP`) and ships no migrations. It only
+   `INSERT`s, plus read-only `SELECT`s of the table's column list so it can write into an older table that lacks
+   some of our columns. A test asserts this. The table SQL under `tests/helpers/` is a test fixture only.
+4. Postgres is configured only through the existing variables (`POSTGRES_DATABASE`, `_HOSTNAME`, `_PASSWORD`,
+   `_PORT`, `_USER`, `_DATABASE_TABLENAME`) and `NODE_ENV`, which picks the CA file (dev/uat/prod) as before.
+5. Timestamps are written as UTC wall-clock text (`2026-01-02 03:04:05.678`), as the original service did. The
+   CST format is for logs and emails only.
+
+## 7. Testing
+
+1. Three layers, all required for a feature:
+   - **Unit** (`tests/unit`): one module, all collaborators faked, no network, no timers
+     (use fake clock). Fast (< 5 s total).
+   - **Integration** (`tests/integration`): real HTTP routes + real services + real SQL
+     (`pg-mem`) + in-memory Kubernetes + a local fake devfile registry. Verifies wiring.
+   - **End to end** (`tests/e2e`): a real listening server, driven only over HTTP
+     (`fetch`) through whole user journeys (login → create → start → stop → delete), then
+     asserting the Kubernetes state and metrics rows.
+2. A bug fix starts with a failing test.
+3. Tests do not depend on order, wall-clock time, or real cluster/DB access.
+4. Coverage gate: ≥ 85 % lines and ≥ 80 % branches on `src/` (excluding `src/index.ts`).
+5. No `.only`, no `.skip` committed.
+
+## 8. API contract
+
+1. **URI versioning, industry standard:** every API route is served under `/api/v1`
+   (`/api/v1/login`, `/api/v1/catalog`, `/api/v1/:soeid/workspaces[/:id[/start|/stop]]`, ...).
+   Path structure after the prefix is identical to the pre-versioning layout.
+   Operational probes `/healthz` and `/readyz` are unversioned.
+2. Within a major version changes are additive only (new routes, new optional fields).
+   A breaking change ships as `/api/v2` alongside `v1`; `v1` is then deprecated, never edited in place.
+3. The pre-versioning paths (`/login`, `/:soeid/...`) exist only as deprecated aliases of `v1`
+   (`Deprecation: true` and a `Link: rel="successor-version"` header) controlled by
+   `LEGACY_UNVERSIONED_ROUTES`. Remove them once Orion has migrated.
+4. Request bodies are validated with `zod`; unknown properties are rejected.
+5. `409` for limit/conflict, `404` unknown resource, `400` invalid input, `401/403` auth,
+   `502` upstream (cluster/registry) failure, `500` everything else.
+
+## 9. Operations
+
+1. `/healthz` (liveness) never touches dependencies. `/readyz` checks Kubernetes API and
+   Postgres reachability.
+2. Logs are one entry per event with `requestId`, `soeid`, `event`. Terminal format (`LOG_FORMAT=pretty`, the default) is readable and coloured: errors red, warnings orange, successes green, everything else white; `LOG_FORMAT=json` gives structured JSON lines. Use `logger.success` for something that worked, `warn` for a problem the caller or the setup caused, `error` for a failure on our side.
+3. Graceful shutdown on `SIGTERM`: stop accepting, drain, close the DB pool.
+4. Config via environment variables only; every variable is documented in `.env.example`.
+5. Container runs as non-root, read-only root filesystem compatible.
+
+## 10. Git and review
+
+1. Small, focused commits; imperative subject line.
+2. CI order: `typecheck` → `lint` → `test:unit` → `test:integration` → `test:e2e` → `build`.
+3. A PR is mergeable only when the [CHECKLIST](./CHECKLIST.md) items for its scope are ticked.
+
 /src/config/env.ts
 import { z } from 'zod';
 
@@ -317,6 +473,10 @@ const schema = z.object({
   PORT: intFrom(3050),
   NODE_ENV: z.string().default('development'),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error', 'silent']).default('info'),
+  // pretty = readable lines for a terminal; json = one JSON object per line for log collectors
+  LOG_FORMAT: z.enum(['pretty', 'json']).default('pretty'),
+  // colours in the pretty format (errors red, warnings orange, successes green, the rest white); NO_COLOR turns them off
+  LOG_COLOR: flag('true'),
 
   SECRET_KEY: z.string().min(16, 'SECRET_KEY must be at least 16 characters'),
   ADMIN_USERNAME: z.string().min(1, 'ADMIN_USERNAME is required'),
@@ -438,6 +598,9 @@ export interface AppConfig {
   port: number;
   nodeEnv: string;
   logLevel: 'debug' | 'info' | 'warn' | 'error' | 'silent';
+  logFormat: 'pretty' | 'json';
+  /** ANSI colours in the pretty log format. */
+  logColor: boolean;
   /** Serve the pre-versioning paths (/login, /:soeid/...) as deprecated aliases of /api/v1. */
   legacyRoutes: boolean;
   auth: { secretKey: string; adminUsername: string; adminPassword: string; expiresIn: string };
@@ -570,6 +733,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     port: e.PORT,
     nodeEnv: e.NODE_ENV,
     logLevel: e.LOG_LEVEL,
+    logFormat: e.LOG_FORMAT,
+    logColor: e.LOG_COLOR && !cleaned.NO_COLOR,
     legacyRoutes: e.LEGACY_UNVERSIONED_ROUTES,
     auth: {
       secretKey: e.SECRET_KEY,
@@ -625,235 +790,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   };
 }
 
-/src/container.ts
-import type { AppConfig } from './config/env.js';
-import { MetricsRepository, NoopMetricsStore, createPgPool } from './infra/db/MetricsRepository.js';
-import { DevfileRegistryClient, createRegistryHttp } from './infra/devreg/DevfileRegistryClient.js';
-import { EmailNotifier, NoopNotifier } from './infra/email/EmailNotifier.js';
-import { GraphqlUserDirectory, NullUserDirectory } from './infra/email/GraphqlUserDirectory.js';
-import { KubeClient, createKubeConfig } from './infra/kube/KubeClient.js';
-import {
-  systemClock,
-  type Clock,
-  type DevfileRegistry,
-  type KubeGateway,
-  type MetricsStore,
-  type Notifier,
-} from './infra/ports.js';
-import { DeploymentNamespaceService } from './services/DeploymentNamespaceService.js';
-import { GitConfigService } from './services/GitConfigService.js';
-import { MetricsRecorder } from './services/MetricsRecorder.js';
-import { NamespaceService } from './services/NamespaceService.js';
-import { PatService } from './services/PatService.js';
-import { WorkspaceService } from './services/WorkspaceService.js';
-import type { Logger } from './utils/logger.js';
-
-export interface Dependencies {
-  kube: KubeGateway;
-  /** Cluster for build/deploy projects when it is a different one; defaults to `kube`. */
-  deployKube?: KubeGateway;
-  metrics: MetricsStore;
-  registry: DevfileRegistry;
-  notifier: Notifier;
-  clock?: Clock;
-}
-
-export interface Container {
-  config: AppConfig;
-  logger: Logger;
-  kube: KubeGateway;
-  /** Same object as `kube` unless a separate deploy cluster is configured. */
-  deployKube: KubeGateway;
-  metrics: MetricsStore;
-  registry: DevfileRegistry;
-  recorder: MetricsRecorder;
-  namespaces: NamespaceService;
-  workspaces: WorkspaceService;
-  pats: PatService;
-  gitConfig: GitConfigService;
-  deployments: DeploymentNamespaceService;
-}
-
-/** The single place where adapters are wired into services. Tests call this with fakes. */
-export function buildContainer(config: AppConfig, logger: Logger, deps: Dependencies): Container {
-  const clock = deps.clock ?? systemClock;
-  const recorder = new MetricsRecorder(deps.metrics, clock, logger);
-  const namespaces = new NamespaceService(
-    deps.kube,
-    recorder,
-    { workspaceProxyUrl: config.devreg.workspaceProxyUrl, emailDomain: config.notification.emailDomain },
-    logger,
-  );
-  return {
-    config,
-    logger,
-    kube: deps.kube,
-    deployKube: deps.deployKube ?? deps.kube,
-    metrics: deps.metrics,
-    registry: deps.registry,
-    recorder,
-    namespaces,
-    workspaces: new WorkspaceService(
-      deps.kube,
-      namespaces,
-      deps.registry,
-      recorder,
-      {
-        limits: config.limits,
-        editors: config.devreg.editors,
-        devSpacesServiceFqdn: config.cluster.devSpacesServiceFqdn,
-      },
-      clock,
-      logger,
-    ),
-    pats: new PatService(deps.kube, namespaces, recorder, config.github),
-    gitConfig: new GitConfigService(deps.kube, namespaces, recorder),
-    deployments: new DeploymentNamespaceService(
-      deps.deployKube ?? deps.kube,
-      recorder,
-      deps.notifier,
-      config.cluster.deployProjectRequester,
-      logger,
-    ),
-  };
-}
-
-/** Real adapters for a running pod. */
-export function createProductionDependencies(config: AppConfig, logger: Logger): Dependencies {
-  const directory = config.notification.userDirectoryUrl
-    ? new GraphqlUserDirectory(config.notification.userDirectoryUrl, logger)
-    : new NullUserDirectory();
-  const { cluster } = config;
-  const skipTlsVerify = !cluster.tlsRejectUnauthorized;
-  const separateDeploy = cluster.deployApiUrl !== cluster.apiUrl;
-  return {
-    kube: new KubeClient(
-      createKubeConfig({
-        apiUrl: cluster.apiUrl,
-        token: cluster.token,
-        kubeconfigPath: cluster.kubeconfigPath,
-        skipTlsVerify,
-      }),
-    ),
-    deployKube: separateDeploy
-      ? new KubeClient(
-          createKubeConfig({
-            apiUrl: cluster.deployApiUrl,
-            token: cluster.deployToken,
-            kubeconfigPath: cluster.kubeconfigPath,
-            skipTlsVerify,
-          }),
-        )
-      : undefined,
-    metrics: config.postgres.enabled
-      ? new MetricsRepository(createPgPool(config.postgres, logger), config.postgres.table, logger)
-      : new NoopMetricsStore(),
-    registry: new DevfileRegistryClient(createRegistryHttp(config.devreg.url)),
-    notifier: config.notification.url
-      ? new EmailNotifier(config.notification, config.cluster.deployApiUrl, directory, logger)
-      : new NoopNotifier(),
-  };
-}
-
-/src/factories/workspace-factory.ts
-import type { Devfile, DevWorkspaceResource, EditorKey } from '../domain/types.js';
-
-export const WORKSPACE_LABELS = {
-  csiid: 'devspaces.citi.com/csiid',
-  stack: 'devspaces.citi.com/stack',
-  managedBy: 'app.kubernetes.io/managed-by',
-} as const;
-
-export interface BuildWorkspaceArgs {
-  name: string;
-  namespace: string;
-  csiid: string;
-  stack: string;
-  stackVersion: string;
-  devfile: Devfile;
-  editor: EditorKey;
-  /** Full editor id as the Dev Spaces dashboard knows it, e.g. `che-incubator/che-code/latest`. */
-  editorId: string;
-  devSpacesServiceFqdn: string;
-  repositoryUrl?: string;
-  repositoryBranch?: string;
-}
-
-const EDITOR_DISPLAY: Record<EditorKey, string> = {
-  vscode: 'Visual Studio Code',
-  intellij: 'IntelliJ IDEA',
-  goland: 'GoLand',
-};
-
-function repoName(url: string): string {
-  const last = url
-    .replace(/\.git$/, '')
-    .split('/')
-    .filter(Boolean)
-    .pop();
-  return (last ?? 'project').toLowerCase().replace(/[^a-z0-9-]/g, '-');
-}
-
-export function buildDevWorkspaceObject(a: BuildWorkspaceArgs): DevWorkspaceResource {
-  const projects = [...((a.devfile.projects as unknown[] | undefined) ?? [])];
-  if (a.repositoryUrl) {
-    projects.push({
-      name: repoName(a.repositoryUrl),
-      git: {
-        remotes: { origin: a.repositoryUrl },
-        ...(a.repositoryBranch ? { checkoutFrom: { revision: a.repositoryBranch } } : {}),
-      },
-    });
-  }
-
-  const template: NonNullable<NonNullable<DevWorkspaceResource['spec']>['template']> = {
-    attributes: {
-      'controller.devfile.io/devworkspace-config': {
-        name: 'devworkspace-config',
-        namespace: 'openshift-devspaces',
-      },
-      'controller.devfile.io/scc': 'container-build',
-      'controller.devfile.io/storage-type': 'per-workspace',
-    },
-    components: a.devfile.components ?? [],
-  };
-  if (projects.length > 0) template.projects = projects;
-  if (Array.isArray(a.devfile.commands)) template.commands = a.devfile.commands;
-  if (a.devfile.events) template.events = a.devfile.events;
-
-  return {
-    apiVersion: 'workspace.devfile.io/v1alpha2',
-    kind: 'DevWorkspace',
-    metadata: {
-      name: a.name,
-      namespace: a.namespace,
-      annotations: {
-        dw: a.name,
-        workspaceVersion: a.stackVersion,
-        workspaceDisplayName: a.devfile.metadata?.displayName ?? a.devfile.metadata?.name ?? a.stack,
-        workspaceDescription: a.devfile.metadata?.description ?? '',
-        editorDisplayName: EDITOR_DISPLAY[a.editor],
-      },
-      labels: {
-        [WORKSPACE_LABELS.csiid]: a.csiid,
-        [WORKSPACE_LABELS.stack]: a.stack,
-        [WORKSPACE_LABELS.managedBy]: 'workspace-mgr',
-      },
-    },
-    spec: {
-      started: true,
-      routingClass: 'che',
-      template,
-      contributions: [
-        {
-          name: 'ide',
-          uri: `${a.devSpacesServiceFqdn}/dashboard/api/editors/devfile?che-editor=${a.editorId}`,
-        },
-      ],
-    },
-  };
-}
-
 /src/http/app.ts
 import { randomUUID } from 'node:crypto';
 import express, { Router, type Express, type Request, type RequestHandler, type Response } from 'express';
@@ -894,16 +830,19 @@ export function createApp(c: Container): Express {
     res.locals.requestId = requestId;
     res.setHeader('x-request-id', requestId);
     const started = Date.now();
-    res.on('finish', () =>
-      c.logger.info('request', {
-        requestId,
+    res.on('finish', () => {
+      // 5xx = we failed (red), 4xx = the caller's problem (orange), everything else = a successful call (green)
+      const outcome = res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'success';
+      c.logger[outcome]('request', {
         method: req.method,
-        path: req.path,
+        // originalUrl, not req.path: inside nested routers req.path is only the part after the mount point
+        path: req.originalUrl.split('?')[0],
         status: res.statusCode,
         ms: Date.now() - started,
+        requestId,
         soeid: res.locals.soeid as string | undefined,
-      }),
-    );
+      });
+    });
     next();
   });
 
@@ -1166,7 +1105,12 @@ async function main(): Promise<void> {
   const config = loadConfig(
     process.argv[2] ? { ...process.env, KUBECONFIG_PATH: process.argv[2] } : process.env,
   );
-  const logger = createLogger(config.logLevel);
+  const logger = createLogger(
+    config.logLevel,
+    undefined,
+    {},
+    { format: config.logFormat, color: config.logColor },
+  );
   if (!config.cluster.tlsRejectUnauthorized) {
     logger.warn('cluster.tls_verification_disabled', {
       reason: 'NODE_TLS_REJECT_UNAUTHORIZED=0',
@@ -1175,7 +1119,7 @@ async function main(): Promise<void> {
   }
   const container = buildContainer(config, logger, createProductionDependencies(config, logger));
   const server: Server = createApp(container).listen(config.port, () =>
-    logger.info('server.listening', startupSummary(config)),
+    logger.success('server.listening', startupSummary(config)),
   );
 
   let shuttingDown = false;
@@ -1197,218 +1141,734 @@ main().catch((error: unknown) => {
   process.exit(1);
 });
 
-/src/infra/kube/KubeClient.ts
+/src/infra/email/EmailNotifier.ts
+import type { AppConfig } from '../../config/env.js';
+import { errorMessage } from '../../utils/errors.js';
+import { silentLogger, type Logger } from '../../utils/logger.js';
+import type {
+  NamespaceCreatedEmail,
+  NamespaceExistsEmail,
+  NamespacesDeletedEmail,
+  Notifier,
+  UserDirectory,
+} from '../ports.js';
 import {
-  CoreV1Api,
-  KubeConfig,
-  KubernetesObjectApi,
-  PatchStrategy,
-  type KubernetesObject,
-} from '@kubernetes/client-node';
-import type { DevWorkspaceResource, KubeObject } from '../../domain/types.js';
-import { isK8sStatus, toAppError } from '../../utils/k8s-errors.js';
-import type { KubeGateway, NamespacedKind } from '../ports.js';
+  clusterLinks,
+  deletedNamespacesEmailBody,
+  existingNamespaceEmailBody,
+  newNamespaceEmailBody,
+} from './email-templates.js';
 
-const API_VERSION: Record<NamespacedKind, string> = {
-  Secret: 'v1',
-  ConfigMap: 'v1',
-  ResourceQuota: 'v1',
-  LimitRange: 'v1',
-  Role: 'rbac.authorization.k8s.io/v1',
-  RoleBinding: 'rbac.authorization.k8s.io/v1',
-  NetworkPolicy: 'networking.k8s.io/v1',
-  DevWorkspace: 'workspace.devfile.io/v1alpha2',
-  DevWorkspaceTemplate: 'workspace.devfile.io/v1alpha2',
+export type FetchFn = (url: string, init: RequestInit) => Promise<Response>;
+
+export class EmailNotifier implements Notifier {
+  constructor(
+    private readonly config: AppConfig['notification'],
+    private readonly clusterApiUrl: string,
+    private readonly directory: UserDirectory,
+    private readonly logger: Logger = silentLogger,
+    private readonly fetchFn: FetchFn = (url, init) => fetch(url, init),
+  ) {}
+
+  async namespaceCreated(e: NamespaceCreatedEmail): Promise<void> {
+    await this.send(e.soeid, 'Success! Your DevSpaces Deployment Project is Ready!', (firstName, recipient) =>
+      newNamespaceEmailBody({
+        firstName,
+        soeid: e.soeid,
+        namespace: e.namespace,
+        cluster: clusterLinks(this.clusterApiUrl),
+        recipient,
+      }),
+    );
+  }
+
+  async namespaceAlreadyExists(e: NamespaceExistsEmail): Promise<void> {
+    await this.send(
+      e.soeid,
+      'Important: Your DevSpaces Deployment Project Already Exists',
+      (firstName, recipient) =>
+        existingNamespaceEmailBody({
+          firstName,
+          soeid: e.soeid,
+          newNamespace: e.newNamespace,
+          existingNamespace: e.existingNamespace,
+          cluster: clusterLinks(this.clusterApiUrl),
+          recipient,
+        }),
+    );
+  }
+
+  async namespacesDeleted(e: NamespacesDeletedEmail): Promise<void> {
+    if (e.namespaces.length === 0) return;
+    await this.send(
+      e.soeid,
+      'Confirmation: DevSpaces Deployment Project(s) Deleted',
+      (firstName, recipient) =>
+        deletedNamespacesEmailBody({ firstName, soeid: e.soeid, namespaces: e.namespaces, recipient }),
+    );
+  }
+
+  private async send(
+    soeid: string,
+    subject: string,
+    body: (firstName: string | undefined, recipient: string) => string,
+  ): Promise<void> {
+    const { url, username, password, sender, cc, emailDomain } = this.config;
+    if (!url) {
+      this.logger.debug('email.skipped', { reason: 'NOTIFICATION_MAIL_URL not set', subject });
+      return;
+    }
+    const recipient = `${soeid}@${emailDomain}`;
+    try {
+      const firstName = await this.directory.firstName(soeid);
+      const response = await this.fetchFn(`${url.replace(/\/$/, '')}/send-mail/v2`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`,
+        },
+        body: JSON.stringify({
+          sender,
+          receiver: recipient,
+          receiverName: soeid.toUpperCase(),
+          cc: cc ?? '',
+          bcc: '',
+          subject,
+          emailMessage: body(firstName, recipient),
+          isHtml: true,
+        }),
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!response.ok) throw new Error(`mail service answered ${response.status}`);
+      this.logger.success('email.sent', { soeid, subject });
+    } catch (error) {
+      this.logger.error('email.failed', { soeid, subject, error: errorMessage(error) });
+    }
+  }
+}
+
+export class NoopNotifier implements Notifier {
+  async namespaceCreated(): Promise<void> {}
+  async namespaceAlreadyExists(): Promise<void> {}
+  async namespacesDeleted(): Promise<void> {}
+}
+
+/src/services/DeploymentNamespaceService.ts
+import {
+  ANNOTATION_CHE_USERNAME,
+  BUILDER_ROLE_CONFIG,
+  DEPLOYER_ROLE_CONFIG,
+  DEPLOYMENT_LIMIT_RANGE_DEFAULT_CONFIG,
+  DEPLOYMENT_RESOURCE_QUOTA_COMPUTE_CONFIG,
+  DEPLOYMENT_RESOURCE_QUOTA_STORAGE_CONFIG,
+  LABEL_COMPONENT,
+  LABEL_CSIID,
+  LABEL_DEPLOYMENT_NAMESPACE,
+} from '../constants/kubernetes-configs.js';
+import type { KubeObject } from '../domain/types.js';
+import type { KubeGateway, Notifier } from '../infra/ports.js';
+import { errorMessage } from '../utils/errors.js';
+import { silentLogger, type Logger } from '../utils/logger.js';
+import { csiidFromDeploymentNamespace, deploymentNamespace } from '../utils/names.js';
+import type { MetricsRecorder } from './MetricsRecorder.js';
+
+export interface DeploymentEnsureResult {
+  exists: boolean;
+  name: string;
+}
+
+export interface DeploymentDeleteResult {
+  exists: boolean;
+  deleted: string[];
+  failed: string[];
+  message: string;
+}
+
+export class DeploymentNamespaceService {
+  constructor(
+    private readonly kube: KubeGateway,
+    private readonly recorder: MetricsRecorder,
+    private readonly notifier: Notifier,
+    private readonly requester: string,
+    private readonly logger: Logger = silentLogger,
+  ) {}
+
+  async list(soeid: string): Promise<string[]> {
+    const pattern = new RegExp(`^${soeid}-devspaces-deploy-\\d+$`);
+    const all = await this.kube.listNamespaces();
+    return all.map((ns) => ns.metadata?.name ?? '').filter((name) => pattern.test(name));
+  }
+
+  /** Returns the existing deployment project for this CSI id, or creates and provisions a new one. */
+  async ensure(soeid: string, csiid: string): Promise<DeploymentEnsureResult> {
+    const desired = deploymentNamespace(soeid, csiid);
+    if (await this.kube.getNamespace(desired)) {
+      await this.notifier.namespaceAlreadyExists({
+        soeid,
+        newNamespace: desired,
+        existingNamespace: desired,
+      });
+      return { exists: true, name: desired };
+    }
+
+    const actual = await this.recorder.track(
+      { soeid, csiid, eventtype: 'create', resourcetype: 'deployment_namespace', resourcename: desired },
+      () => this.createAndProvision(soeid, csiid, desired),
+    );
+    await this.notifier.namespaceCreated({ soeid, namespace: actual });
+    return { exists: false, name: actual };
+  }
+
+  private async createAndProvision(soeid: string, csiid: string, desired: string): Promise<string> {
+    const project = await this.kube.createProject({
+      metadata: {
+        name: desired,
+        labels: {
+          [LABEL_COMPONENT]: LABEL_DEPLOYMENT_NAMESPACE,
+          'app.kubernetes.io/managed-by': 'devspaces-support-team',
+          'devspaces.citi.com/purpose': 'deployment-resource-management',
+          [LABEL_CSIID]: csiid,
+        },
+        annotations: {
+          [ANNOTATION_CHE_USERNAME]: soeid,
+          'devspaces.citi.com/creator': 'workspace-manager-automation',
+          'openshift.io/requester': this.requester,
+          'openshift.io/display-name': `DevSpaces Deployment Project for User ${soeid} [CSIID: ${csiid}]`,
+          'openshift.io/description': `Temporary deployment testing project for user ${soeid} [CSIID: ${csiid}], removable by DevSpaces support`,
+        },
+      },
+    });
+    const name = project.metadata?.name ?? desired;
+
+    await this.kube.apply('ResourceQuota', name, DEPLOYMENT_RESOURCE_QUOTA_COMPUTE_CONFIG);
+    await this.kube.apply('LimitRange', name, DEPLOYMENT_LIMIT_RANGE_DEFAULT_CONFIG);
+    await this.kube.apply('ResourceQuota', name, DEPLOYMENT_RESOURCE_QUOTA_STORAGE_CONFIG);
+    await this.grantAccess(soeid, name);
+    this.logger.success('deployment_namespace.created', { soeid, namespace: name });
+    return name;
+  }
+
+  private async grantAccess(soeid: string, namespace: string): Promise<void> {
+    for (const role of [BUILDER_ROLE_CONFIG, DEPLOYER_ROLE_CONFIG]) {
+      const roleName = role.metadata?.name ?? '';
+      await this.kube.apply('Role', namespace, role);
+      await this.kube.apply('RoleBinding', namespace, this.binding(soeid, namespace, roleName));
+    }
+  }
+
+  private binding(soeid: string, namespace: string, roleName: string): KubeObject {
+    return {
+      apiVersion: 'rbac.authorization.k8s.io/v1',
+      kind: 'RoleBinding',
+      metadata: { name: `${roleName}-${soeid}-binding` },
+      subjects: [
+        { kind: 'User', name: soeid, apiGroup: 'rbac.authorization.k8s.io' },
+        { kind: 'ServiceAccount', name: 'default', namespace },
+      ],
+      roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'Role', name: roleName },
+    };
+  }
+
+  async delete(soeid: string): Promise<DeploymentDeleteResult> {
+    const names = await this.list(soeid);
+    if (names.length === 0) {
+      return { exists: false, deleted: [], failed: [], message: 'No deployment namespaces found for user.' };
+    }
+
+    const deleted: string[] = [];
+    const failed: string[] = [];
+    for (const name of names) {
+      try {
+        await this.recorder.track(
+          {
+            soeid,
+            csiid: csiidFromDeploymentNamespace(name) ?? '',
+            eventtype: 'delete',
+            resourcetype: 'deployment_namespace',
+            resourcename: name,
+          },
+          () => this.kube.deleteNamespace(name),
+        );
+        deleted.push(name);
+      } catch (error) {
+        this.logger.error('deployment_namespace.delete_failed', {
+          soeid,
+          namespace: name,
+          error: errorMessage(error),
+        });
+        failed.push(name);
+      }
+    }
+
+    if (deleted.length > 0) await this.notifier.namespacesDeleted({ soeid, namespaces: deleted });
+
+    const parts: string[] = [];
+    if (deleted.length > 0)
+      parts.push(`Deleted ${deleted.length} deployment namespace(s): ${deleted.join(', ')}`);
+    if (failed.length > 0) parts.push(`Failed to delete ${failed.length}: ${failed.join(', ')}`);
+    return { exists: deleted.length > 0, deleted, failed, message: parts.join('. ') };
+  }
+}
+
+/src/services/WorkspaceService.ts
+import type { AppConfig } from '../config/env.js';
+import type { CreateWorkspaceInput, DevWorkspaceResource, EditorKey, Workspace } from '../domain/types.js';
+import { applyEditorProfile, parseDevfile } from '../factories/devfile-updater.js';
+import { buildDevWorkspaceObject, WORKSPACE_LABELS } from '../factories/workspace-factory.js';
+import { systemClock, type Clock, type DevfileRegistry, type KubeGateway } from '../infra/ports.js';
+import {
+  NotFoundError,
+  WorkspaceCountExceededError,
+  WorkspaceRunCountExceededError,
+} from '../utils/errors.js';
+import { silentLogger, type Logger } from '../utils/logger.js';
+import { cleanWorkspaceName, csiidFromWorkspaceNamespace } from '../utils/names.js';
+import { summarizeComponents } from '../utils/resources.js';
+import { durationSince } from '../utils/timestamp.js';
+import type { MetricsRecorder } from './MetricsRecorder.js';
+import type { NamespaceService } from './NamespaceService.js';
+
+export interface WorkspaceServiceOptions {
+  limits: AppConfig['limits'];
+  editors: AppConfig['devreg']['editors'];
+  devSpacesServiceFqdn: string;
+}
+
+const ACTIVE_PHASES = new Set(['Running', 'Starting', 'Stopping']);
+
+/** Running, starting, stopping — or not yet reporting a phase — all still hold cluster resources. */
+export const isActive = (dw: DevWorkspaceResource): boolean =>
+  !dw.status?.phase || ACTIVE_PHASES.has(dw.status.phase);
+
+export function toWorkspace(dw: DevWorkspaceResource): Workspace {
+  const meta = dw.metadata ?? {};
+  const annotations = meta.annotations ?? {};
+  const namespace = meta.namespace ?? '';
+  const resources = summarizeComponents(dw.spec?.template?.components);
+  return {
+    id: meta.name ?? '',
+    name: meta.name ?? '',
+    displayName: annotations.workspaceDisplayName ?? meta.name ?? '',
+    description: annotations.workspaceDescription ?? '',
+    namespace,
+    csiid: meta.labels?.[WORKSPACE_LABELS.csiid] ?? csiidFromWorkspaceNamespace(namespace) ?? '',
+    phase: dw.status?.phase ?? 'Starting',
+    mainUrl: dw.status?.mainUrl ?? '',
+    editor: annotations.editorDisplayName ?? '',
+    version: annotations.workspaceVersion ?? '',
+    stack: meta.labels?.[WORKSPACE_LABELS.stack] ?? '',
+    created: meta.creationTimestamp ? new Date(meta.creationTimestamp).toISOString() : '',
+    limitcpu: resources.limitcpu,
+    limitmemory: resources.limitmemory,
+    storage: resources.storage,
+  };
+}
+
+/** When the workspace last became ready; falls back to creation time. */
+function runningSince(dw: DevWorkspaceResource): Date | string | undefined {
+  const ready = dw.status?.conditions?.find(
+    (c) => (c.type === 'Started' || c.type === 'Ready') && c.status === 'True',
+  );
+  return ready?.lastTransitionTime ?? dw.metadata?.creationTimestamp;
+}
+
+export class WorkspaceService {
+  constructor(
+    private readonly kube: KubeGateway,
+    private readonly namespaces: NamespaceService,
+    private readonly registry: DevfileRegistry,
+    private readonly recorder: MetricsRecorder,
+    private readonly options: WorkspaceServiceOptions,
+    private readonly clock: Clock = systemClock,
+    private readonly logger: Logger = silentLogger,
+  ) {}
+
+  private async listResources(soeid: string): Promise<DevWorkspaceResource[]> {
+    const namespaces = await this.namespaces.listForUser(soeid);
+    const lists = await Promise.all(
+      namespaces.map((ns) => this.kube.list<DevWorkspaceResource>('DevWorkspace', ns.metadata?.name ?? '')),
+    );
+    return lists.flat();
+  }
+
+  async list(soeid: string): Promise<Workspace[]> {
+    return (await this.listResources(soeid)).map(toWorkspace);
+  }
+
+  private async find(soeid: string, id: string): Promise<DevWorkspaceResource> {
+    const found = (await this.listResources(soeid)).find((dw) => dw.metadata?.name === id);
+    if (!found) throw new NotFoundError(`Workspace '${id}' not found`, 'WORKSPACE_NOT_FOUND');
+    return found;
+  }
+
+  async get(soeid: string, id: string): Promise<Workspace> {
+    return toWorkspace(await this.find(soeid, id));
+  }
+
+  private assertCanRunAnother(all: DevWorkspaceResource[]): void {
+    const active = all.filter(isActive).length;
+    if (active >= this.options.limits.maxRunning) {
+      throw new WorkspaceRunCountExceededError(
+        `You already have ${active} running workspace(s); the limit is ${this.options.limits.maxRunning}. Stop one first.`,
+      );
+    }
+  }
+
+  private assertCanCreateAnother(all: DevWorkspaceResource[]): void {
+    if (all.length >= this.options.limits.maxTotal) {
+      throw new WorkspaceCountExceededError(
+        `You already have ${all.length} workspace(s); the limit is ${this.options.limits.maxTotal}. Delete one first.`,
+      );
+    }
+    this.assertCanRunAnother(all);
+  }
+
+  async create(input: CreateWorkspaceInput): Promise<Workspace> {
+    const { soeid, csiid } = input;
+    this.assertCanCreateAnother(await this.listResources(soeid));
+
+    const { name: namespace } = await this.namespaces.ensure(soeid, csiid);
+    const { yaml, version } = await this.registry.getDevfile(input.devworkspaceValue, input.stackVersion);
+    const devfile = applyEditorProfile(parseDevfile(yaml), input.editor);
+    const body = buildDevWorkspaceObject({
+      name: cleanWorkspaceName(input.devworkspaceValue),
+      namespace,
+      csiid,
+      stack: input.devworkspaceValue,
+      stackVersion: version,
+      devfile,
+      editor: input.editor,
+      editorId: this.editorId(input.editor),
+      devSpacesServiceFqdn: this.options.devSpacesServiceFqdn,
+      repositoryUrl: input.repositoryUrl,
+      repositoryBranch: input.repositoryBranch,
+    });
+
+    const created = await this.recorder.track(
+      {
+        soeid,
+        csiid,
+        eventtype: 'create',
+        resourcetype: 'workspace',
+        resourcename: body.metadata?.name ?? '',
+        workspaceversion: version,
+        editorname: input.editor,
+        ...summarizeComponents(devfile.components),
+      },
+      () => this.kube.create<DevWorkspaceResource>('DevWorkspace', namespace, body),
+    );
+    this.logger.success('workspace.created', { soeid, namespace, workspace: created.metadata?.name });
+    return toWorkspace(created);
+  }
+
+  async start(soeid: string, id: string): Promise<Workspace> {
+    const dw = await this.find(soeid, id);
+    if (dw.status?.phase === 'Running' || dw.status?.phase === 'Starting') return toWorkspace(dw);
+    this.assertCanRunAnother(await this.listResources(soeid));
+    return this.setStarted(soeid, dw, true);
+  }
+
+  async stop(soeid: string, id: string): Promise<Workspace> {
+    const dw = await this.find(soeid, id);
+    return this.setStarted(soeid, dw, false);
+  }
+
+  private async setStarted(soeid: string, dw: DevWorkspaceResource, started: boolean): Promise<Workspace> {
+    const namespace = dw.metadata?.namespace ?? '';
+    const name = dw.metadata?.name ?? '';
+    const resources = summarizeComponents(dw.spec?.template?.components);
+    const patched = await this.recorder.track(
+      {
+        soeid,
+        csiid: toWorkspace(dw).csiid,
+        eventtype: started ? 'start' : 'stop',
+        resourcetype: 'workspace',
+        resourcename: name,
+        workspaceversion: dw.metadata?.annotations?.workspaceVersion ?? '',
+        editorname: dw.metadata?.annotations?.editorDisplayName ?? '',
+        duration: started ? '0 seconds' : durationSince(runningSince(dw), this.clock.now()),
+        ...resources,
+      },
+      () => this.kube.setWorkspaceStarted(namespace, name, started),
+    );
+    this.logger.success(started ? 'workspace.started' : 'workspace.stopped', {
+      soeid,
+      namespace,
+      workspace: name,
+    });
+    return toWorkspace({ ...dw, ...patched, metadata: { ...dw.metadata, ...patched.metadata } });
+  }
+
+  async delete(soeid: string, id: string): Promise<void> {
+    const dw = await this.find(soeid, id);
+    const namespace = dw.metadata?.namespace ?? '';
+    const name = dw.metadata?.name ?? '';
+    const resources = summarizeComponents(dw.spec?.template?.components);
+
+    await this.recorder.track(
+      {
+        soeid,
+        csiid: toWorkspace(dw).csiid,
+        eventtype: 'delete',
+        resourcetype: 'workspace',
+        resourcename: name,
+        workspaceversion: dw.metadata?.annotations?.workspaceVersion ?? '',
+        editorname: dw.metadata?.annotations?.editorDisplayName ?? '',
+        duration: durationSince(dw.metadata?.creationTimestamp, this.clock.now()),
+        ...resources,
+      },
+      async () => {
+        await this.kube.delete('DevWorkspace', namespace, name);
+        // Workspaces created by the legacy flow reference a separate DevWorkspaceTemplate.
+        for (const contribution of dw.spec?.contributions ?? []) {
+          if (contribution.kubernetes?.name) {
+            await this.kube.delete('DevWorkspaceTemplate', namespace, contribution.kubernetes.name);
+          }
+        }
+      },
+    );
+    this.logger.success('workspace.deleted', { soeid, namespace, workspace: name });
+  }
+
+  private editorId(editor: EditorKey): string {
+    return this.options.editors[editor];
+  }
+}
+
+/src/utils/log-format.ts
+/**
+ * Human-readable log lines for a terminal.
+ *
+ *   2026-10-24 03:12:45.123 | OK    | request                        | GET    /api/v1/pp1/workspaces -> 200 (12 ms)  requestId=ab12
+ *   2026-10-24 03:12:45.200 | ERROR | request.failed                 | code=UPSTREAM_ERROR  error="cluster is down"
+ *   2026-10-24 03:12:46.001 | OK    | server.listening
+ *       port        : 8080
+ *       cluster     : https://api.namctigtd001d.ecs.dyn.nsroot.net:6443
+ *       postgres:
+ *         host      : NAORI01DPS_INSTANCE1.pgaas.dyn.nsroot.net
+ *
+ * Colours (the whole line): errors red, warnings orange, successful calls green, everything else white.
+ */
+
+export type LogKind = 'debug' | 'info' | 'success' | 'warn' | 'error';
+
+const ESC = '\u001b[';
+export const RESET = `${ESC}0m`;
+export const COLORS: Record<LogKind, string> = {
+  error: `${ESC}31m`, // red
+  warn: `${ESC}38;5;208m`, // orange
+  success: `${ESC}32m`, // green
+  info: `${ESC}97m`, // white
+  debug: `${ESC}97m`, // white
 };
 
-const asK8s = (o: unknown): KubernetesObject => o as KubernetesObject;
-const asKube = <T>(o: unknown): T => o as T;
+const BADGE: Record<LogKind, string> = {
+  error: 'ERROR',
+  warn: 'WARN ',
+  success: 'OK   ',
+  info: 'INFO ',
+  debug: 'DEBUG',
+};
 
-export function loadKubeConfig(kubeconfigPath?: string): KubeConfig {
-  const kc = new KubeConfig();
-  if (kubeconfigPath) kc.loadFromFile(kubeconfigPath);
-  else kc.loadFromDefault();
-  return kc;
+const EVENT_WIDTH = 30;
+const BLOCK_INDENT = '    ';
+const MAX_INLINE_FIELDS = 6;
+const MAX_INLINE_VALUE = 80;
+const MAX_INLINE_TOTAL = 120;
+
+export interface LogEntry {
+  time: Date;
+  kind: LogKind;
+  event: string;
+  fields: Record<string, unknown>;
 }
 
-export interface ClusterConnection {
-  apiUrl: string;
-  /** Bearer token (e.g. from devSpacesClusterToken001d). Wins over a kubeconfig. */
-  token?: string;
-  kubeconfigPath?: string;
-  /** Do not verify the cluster's certificate (NODE_TLS_REJECT_UNAUTHORIZED=0). */
-  skipTlsVerify?: boolean;
+const pad2 = (n: number): string => String(n).padStart(2, '0');
+
+/** Local time `2026-10-24 03:12:45.123`. */
+export function formatLocalTime(d: Date): string {
+  return (
+    `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ` +
+    `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}.${String(d.getMilliseconds()).padStart(3, '0')}`
+  );
 }
 
-/** Token + API URL when a token is given, else the kubeconfig file, else the pod's service account / default config. */
-export function createKubeConfig(connection: ClusterConnection): KubeConfig {
-  if (!connection.token || !connection.apiUrl) return loadKubeConfig(connection.kubeconfigPath);
-  const kc = new KubeConfig();
-  kc.loadFromOptions({
-    clusters: [
-      { name: 'cluster', server: connection.apiUrl, skipTLSVerify: connection.skipTlsVerify === true },
-    ],
-    users: [{ name: 'service-account', token: connection.token }],
-    contexts: [{ name: 'default', cluster: 'cluster', user: 'service-account' }],
-    currentContext: 'default',
-  });
-  return kc;
+type Primitive = string | number | boolean | null | undefined;
+const isPrimitive = (v: unknown): v is Primitive => v === null || v === undefined || typeof v !== 'object';
+const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
+
+const oneLine = (s: string): string => s.replace(/\r?\n/g, '\\n');
+
+/** Inline value: bare when simple, quoted when it contains spaces or `=`. */
+function inlineValue(v: Primitive): string {
+  if (typeof v !== 'string') return String(v);
+  const s = oneLine(v);
+  return /^[^\s"=]+$/.test(s) ? s : JSON.stringify(s);
 }
 
-/** Kubernetes/OpenShift access through the pod's service account (or a kubeconfig for local runs). */
-export class KubeClient implements KubeGateway {
-  private readonly core: CoreV1Api;
-  private readonly objects: KubernetesObjectApi;
+/** Value on its own line: strings as they are, arrays as compact JSON. */
+function blockValue(v: unknown): string {
+  if (typeof v === 'string') return oneLine(v);
+  if (Array.isArray(v)) return JSON.stringify(v);
+  return String(v);
+}
 
-  constructor(kubeConfig: KubeConfig) {
-    this.core = kubeConfig.makeApiClient(CoreV1Api);
-    this.objects = KubernetesObjectApi.makeApiClient(kubeConfig);
-  }
-
-  private async call<T>(context: string, fn: () => Promise<T>): Promise<T> {
-    try {
-      return await fn();
-    } catch (error) {
-      throw toAppError(context, error);
+function renderBlock(obj: Record<string, unknown>, indent: string): string[] {
+  const entries = Object.entries(obj).filter(([, v]) => v !== undefined);
+  const width = Math.max(
+    0,
+    ...entries.filter(([, v]) => !isPlainObject(v) || Object.keys(v).length === 0).map(([k]) => k.length),
+  );
+  const lines: string[] = [];
+  for (const [key, value] of entries) {
+    if (isPlainObject(value) && Object.keys(value).length > 0) {
+      lines.push(`${indent}${key}:`);
+      lines.push(...renderBlock(value, `${indent}  `));
+    } else {
+      const text = isPlainObject(value) ? '{}' : blockValue(value);
+      lines.push(`${indent}${key.padEnd(width)} : ${text}`);
     }
   }
+  return lines;
+}
 
-  private async orNull<T>(context: string, fn: () => Promise<T>): Promise<T | null> {
-    try {
-      return await fn();
-    } catch (error) {
-      if (isK8sStatus(error, 404)) return null;
-      throw toAppError(context, error);
-    }
+function canInline(fields: [string, unknown][]): boolean {
+  if (fields.length > MAX_INLINE_FIELDS) return false;
+  let total = 0;
+  for (const [k, v] of fields) {
+    if (!isPrimitive(v)) return false;
+    const text = inlineValue(v);
+    if (text.length > MAX_INLINE_VALUE) return false;
+    total += k.length + text.length + 3;
   }
+  return total <= MAX_INLINE_TOTAL;
+}
 
-  private header(kind: NamespacedKind, namespace: string, name: string) {
-    return { apiVersion: API_VERSION[kind], kind, metadata: { name, namespace } };
-  }
+/** `GET    /api/v1/x -> 200 (12 ms)` for the per-request log line, plus the fields that are not part of it. */
+function requestMessage(
+  fields: Record<string, unknown>,
+): { message: string; rest: Record<string, unknown> } | undefined {
+  const { method, path, status, ms, ...rest } = fields;
+  if (typeof method !== 'string' || typeof path !== 'string' || typeof status !== 'number') return undefined;
+  const took = typeof ms === 'number' ? ` (${ms} ms)` : '';
+  return { message: `${method.padEnd(6)} ${path} -> ${status}${took}`, rest };
+}
 
-  private body<T extends KubeObject>(kind: NamespacedKind, namespace: string, body: T): KubernetesObject {
-    return asK8s({
-      ...body,
-      apiVersion: API_VERSION[kind],
-      kind,
-      metadata: { ...body.metadata, namespace },
-    });
-  }
+/** One log entry as text. Multi-line entries end with a blank line so that entries stay visually separate. */
+export function formatPretty(entry: LogEntry, color: boolean): string {
+  const head = `${formatLocalTime(entry.time)} | ${BADGE[entry.kind]} | `;
+  const request = entry.event === 'request' ? requestMessage(entry.fields) : undefined;
+  const fields = Object.entries(request ? request.rest : entry.fields).filter(([, v]) => v !== undefined);
+  const lines: string[] = [];
 
-  async listNamespaces(labelSelector?: string): Promise<KubeObject[]> {
-    const res = await this.call('List namespaces', () => this.core.listNamespace({ labelSelector }));
-    return asKube<KubeObject[]>(res.items);
-  }
-
-  getNamespace(name: string): Promise<KubeObject | null> {
-    return this.orNull(`Read namespace '${name}'`, async () =>
-      asKube<KubeObject>(await this.core.readNamespace({ name })),
+  if (fields.length === 0 && !request) {
+    lines.push(`${head}${entry.event}`);
+  } else if (canInline(fields)) {
+    const inline = fields.map(([k, v]) => `${k}=${inlineValue(v as Primitive)}`).join('  ');
+    const text = [request?.message, inline].filter(Boolean).join('  ');
+    lines.push(`${head}${entry.event.padEnd(EVENT_WIDTH)} | ${text}`);
+  } else {
+    lines.push(
+      request ? `${head}${entry.event.padEnd(EVENT_WIDTH)} | ${request.message}` : `${head}${entry.event}`,
     );
+    lines.push(...renderBlock(Object.fromEntries(fields), BLOCK_INDENT));
+    lines.push(''); // blank line after a multi-line entry
   }
 
-  async createNamespace(body: KubeObject): Promise<KubeObject> {
-    const created = await this.call(`Create namespace '${body.metadata?.name}'`, () =>
-      this.core.createNamespace({ body: asKube(body) }),
-    );
-    return asKube<KubeObject>(created);
-  }
+  const paint = (line: string): string =>
+    color && line !== '' ? `${COLORS[entry.kind]}${line}${RESET}` : line;
+  return lines.map(paint).join('\n');
+}
 
-  async deleteNamespace(name: string): Promise<boolean> {
-    const result = await this.orNull(`Delete namespace '${name}'`, () => this.core.deleteNamespace({ name }));
-    return result !== null;
-  }
+/src/utils/logger.ts
+import { formatPretty, type LogKind } from './log-format.js';
 
-  async createProject(body: KubeObject): Promise<KubeObject> {
-    const name = body.metadata?.name ?? '';
-    const request = asK8s({ ...body, apiVersion: 'project.openshift.io/v1', kind: 'ProjectRequest' });
-    const created = await this.call(`Create project '${name}'`, () => this.objects.create(request));
-    const result = asKube<KubeObject>(created);
-    return result.metadata?.name ? result : { ...result, metadata: { ...result.metadata, name } };
-  }
+export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'silent';
+export type LogFormat = 'json' | 'pretty';
 
-  get<T extends KubeObject>(kind: NamespacedKind, namespace: string, name: string): Promise<T | null> {
-    return this.orNull(`Read ${kind} '${name}'`, async () =>
-      asKube<T>(await this.objects.read(this.header(kind, namespace, name))),
-    );
-  }
+const ORDER: Record<LogLevel, number> = { debug: 10, info: 20, warn: 30, error: 40, silent: 100 };
+const SENSITIVE = /token|password|authorization|secret|pat$|credential|cookie/i;
 
-  async list<T extends KubeObject>(
-    kind: NamespacedKind,
-    namespace: string,
-    labelSelector?: string,
-  ): Promise<T[]> {
-    const res = await this.call(`List ${kind} in '${namespace}'`, () =>
-      this.objects.list(
-        API_VERSION[kind],
-        kind,
-        namespace,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        labelSelector,
-      ),
-    );
-    return asKube<T[]>(res.items);
-  }
+export type LogFields = Record<string, unknown>;
 
-  async create<T extends KubeObject>(kind: NamespacedKind, namespace: string, body: T): Promise<T> {
-    const created = await this.call(`Create ${kind} '${body.metadata?.name}'`, () =>
-      this.objects.create(this.body(kind, namespace, body)),
-    );
-    return asKube<T>(created);
-  }
+export interface Logger {
+  debug(event: string, fields?: LogFields): void;
+  info(event: string, fields?: LogFields): void;
+  /** Something finished successfully (a call, a created resource): shown green in the terminal. */
+  success(event: string, fields?: LogFields): void;
+  warn(event: string, fields?: LogFields): void;
+  error(event: string, fields?: LogFields): void;
+  child(bindings: LogFields): Logger;
+}
 
-  async apply<T extends KubeObject>(kind: NamespacedKind, namespace: string, body: T): Promise<T> {
-    const name = body.metadata?.name ?? '';
-    const context = `Apply ${kind} '${name}'`;
-    const replaceExisting = async (): Promise<T | null> => {
-      const existing = await this.get<T>(kind, namespace, name);
-      if (!existing) return null;
-      const spec = this.body(kind, namespace, {
-        ...body,
-        metadata: { ...body.metadata, resourceVersion: existing.metadata?.resourceVersion },
-      });
-      return asKube<T>(await this.call(context, () => this.objects.replace(spec)));
+export type LogSink = (line: string) => void;
+
+export interface LoggerOptions {
+  /** `json` (one JSON object per line, for log collectors; the default here) or `pretty` (terminal). */
+  format?: LogFormat;
+  /** ANSI colours for the pretty format: error red, warn orange, success green, everything else white. */
+  color?: boolean;
+  /** Clock, replaceable in tests. */
+  now?: () => Date;
+}
+
+export function redact(value: unknown, depth = 0): unknown {
+  if (depth > 5 || value === null || typeof value !== 'object') return value;
+  if (value instanceof Error) return { name: value.name, message: value.message };
+  if (Array.isArray(value)) return value.map((v) => redact(v, depth + 1));
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([k, v]) => [
+      k,
+      SENSITIVE.test(k) ? '[redacted]' : redact(v, depth + 1),
+    ]),
+  );
+}
+
+export function createLogger(
+  level: LogLevel = 'info',
+  sink: LogSink = (line) => process.stdout.write(`${line}\n`),
+  bindings: LogFields = {},
+  options: LoggerOptions = {},
+): Logger {
+  const format = options.format ?? 'json';
+  const now = options.now ?? (() => new Date());
+
+  const write = (kind: LogKind, event: string, fields?: LogFields): void => {
+    // `success` is an info-level message that is shown in green
+    const severity: Exclude<LogLevel, 'silent'> = kind === 'success' ? 'info' : kind;
+    if (ORDER[severity] < ORDER[level]) return;
+    const merged = {
+      ...(redact(bindings) as LogFields),
+      ...(redact(fields ?? {}) as LogFields),
     };
-
-    const replaced = await replaceExisting();
-    if (replaced) return replaced;
-    try {
-      return asKube<T>(await this.objects.create(this.body(kind, namespace, body)));
-    } catch (error) {
-      if (isK8sStatus(error, 409)) {
-        // Lost a creation race with another request; replace what the winner created.
-        const retried = await replaceExisting();
-        if (retried) return retried;
-      }
-      throw toAppError(context, error);
+    const time = now();
+    if (format === 'pretty') {
+      sink(formatPretty({ time, kind, event, fields: merged }, options.color === true));
+      return;
     }
-  }
-
-  async delete(kind: NamespacedKind, namespace: string, name: string): Promise<boolean> {
-    const result = await this.orNull(`Delete ${kind} '${name}'`, () =>
-      this.objects.delete(asK8s(this.header(kind, namespace, name))),
+    sink(
+      JSON.stringify({
+        time: time.toISOString(),
+        level: severity,
+        ...(kind === 'success' ? { outcome: 'success' } : {}),
+        event,
+        ...merged,
+      }),
     );
-    return result !== null;
-  }
+  };
 
-  async setWorkspaceStarted(
-    namespace: string,
-    name: string,
-    started: boolean,
-  ): Promise<DevWorkspaceResource> {
-    const patch = asK8s({ ...this.header('DevWorkspace', namespace, name), spec: { started } });
-    const patched = await this.call(`${started ? 'Start' : 'Stop'} DevWorkspace '${name}'`, () =>
-      this.objects.patch(patch, undefined, undefined, undefined, undefined, PatchStrategy.MergePatch),
-    );
-    return asKube<DevWorkspaceResource>(patched);
-  }
-
-  async ping(): Promise<void> {
-    await this.call('Kubernetes API ping', () => this.core.getAPIResources());
-  }
+  return {
+    debug: (e, f) => write('debug', e, f),
+    info: (e, f) => write('info', e, f),
+    success: (e, f) => write('success', e, f),
+    warn: (e, f) => write('warn', e, f),
+    error: (e, f) => write('error', e, f),
+    child: (b) => createLogger(level, sink, { ...bindings, ...b }, options),
+  };
 }
+
+export const silentLogger: Logger = createLogger('silent');
 
 /tests/helpers/integration.ts
 import type { Express } from 'express';
@@ -1417,7 +1877,7 @@ import { buildContainer, type Container } from '../../src/container.js';
 import { createApp } from '../../src/http/app.js';
 import { signToken } from '../../src/http/auth.js';
 import { DevfileRegistryClient, createRegistryHttp } from '../../src/infra/devreg/DevfileRegistryClient.js';
-import { silentLogger } from '../../src/utils/logger.js';
+import { silentLogger, type Logger } from '../../src/utils/logger.js';
 import { makeConfig, makeFakes, makePgMemRepository, type Fakes } from './testkit.js';
 import { startRegistryServer, type RegistryServer } from './registry-server.js';
 import type { InMemoryKube } from './InMemoryKube.js';
@@ -1441,13 +1901,13 @@ export interface Integration {
  */
 export async function startIntegration(
   env: Record<string, string> = {},
-  options: { deployKube?: InMemoryKube } = {},
+  options: { deployKube?: InMemoryKube; logger?: Logger } = {},
 ): Promise<Integration> {
   const registry = await startRegistryServer();
   const config = makeConfig({ DEVREG_URL: registry.url, ...env });
   const fakes = makeFakes();
   const db = await makePgMemRepository();
-  const container = buildContainer(config, silentLogger, {
+  const container = buildContainer(config, options.logger ?? silentLogger, {
     kube: fakes.kube,
     deployKube: options.deployKube,
     metrics: db.repo,
@@ -1470,375 +1930,121 @@ export async function startIntegration(
   };
 }
 
-/tests/integration/deploy-cluster.test.ts
+/tests/integration/request-logging.test.ts
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { InMemoryKube } from '../helpers/InMemoryKube.js';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { COLORS, RESET } from '../../src/utils/log-format.js';
+import { createLogger } from '../../src/utils/logger.js';
 import { startIntegration, type Integration } from '../helpers/integration.js';
 
-/** Dev Spaces cluster (001d) and a separate build/deploy cluster (004d), as in the original design. */
+/** Terminal output exactly as an operator sees it: pretty format with colours. */
+const raw: string[] = [];
 let t: Integration;
-let deploy: InMemoryKube;
 
 beforeAll(async () => {
-  deploy = new InMemoryKube();
-  t = await startIntegration({}, { deployKube: deploy });
+  const logger = createLogger('debug', (line) => raw.push(line), {}, { format: 'pretty', color: true });
+  t = await startIntegration({}, { logger });
 });
 afterAll(() => t.close());
+beforeEach(() => {
+  raw.length = 0;
+});
 
-describe('workspaces stay on the Dev Spaces cluster, deployment projects go to the deploy cluster', () => {
-  it('creates the deployment project (and its quotas, roles, bindings) only on the deploy cluster', async () => {
-    const res = await t.api('post', '/api/v1/pp1/deployment-projects').send({ csiid: '1001' });
-    expect(res.status).toBe(201);
+const findRequest = (path: string) => raw.find((l) => l.includes('| request ') && l.includes(path));
+/** The line is written when the response has been sent, which can be a moment after the client has it. */
+async function requestLine(path: string): Promise<string | undefined> {
+  for (let i = 0; i < 50 && !findRequest(path); i++) await new Promise((r) => setTimeout(r, 10));
+  return findRequest(path);
+}
+const strip = (line: string) =>
+  line
+    .replaceAll(COLORS.error, '')
+    .replaceAll(COLORS.warn, '')
+    .replaceAll(COLORS.success, '')
+    .replaceAll(COLORS.info, '')
+    .replaceAll(RESET, '');
 
-    expect(deploy.namespaces.has('pp1-devspaces-deploy-1001')).toBe(true);
-    expect([...deploy.objects.keys()].some((k) => k.startsWith('Role/pp1-devspaces-deploy-1001/'))).toBe(
-      true,
+describe('what the terminal shows for each API call', () => {
+  it('a successful call is green, with method, path, status and duration', async () => {
+    await request(t.app).get('/healthz');
+    const line = await requestLine('/healthz');
+    expect(line?.startsWith(COLORS.success)).toBe(true);
+    expect(strip(line as string)).toMatch(
+      /\| OK {4}\| request +\| GET +\/healthz -> 200 \(\d+ ms\) {2}requestId=[0-9a-f-]{36}$/,
     );
-    expect(t.fakes.kube.namespaces.size).toBe(0);
-    expect(t.fakes.kube.objects.size).toBe(0);
   });
 
-  it('lists and deletes them on the deploy cluster', async () => {
-    expect((await t.api('get', '/api/v1/pp1/deployment-projects')).body).toEqual([
-      'pp1-devspaces-deploy-1001',
-    ]);
-    const res = await t.api('delete', '/api/v1/pp1/deployment-projects');
-    expect(res.body.deleted).toEqual(['pp1-devspaces-deploy-1001']);
-    expect(deploy.namespaces.size).toBe(0);
+  it('shows the FULL path, also for successful calls handled inside nested routers', async () => {
+    t.fakes.kube.seedNamespace('pp1-devspaces-1001', 'pp1', '1001');
+    await t.api('get', '/api/v1/pp1/projects?csiid=1001');
+    await request(t.app)
+      .post('/api/v1/login')
+      .send({ username: 'orion-admin', password: 'correct horse battery staple' });
+    expect(strip((await requestLine('/api/v1/pp1/projects')) as string)).toContain(
+      'GET    /api/v1/pp1/projects -> 200',
+    );
+    expect(strip((await requestLine('/api/v1/login')) as string)).toContain('POST   /api/v1/login -> 200');
+    // the query string is not part of the logged path
+    expect(raw.join('\n')).not.toContain('csiid=1001 ->');
+    expect(raw.join('\n')).not.toContain('?csiid');
   });
 
-  it('workspaces and projects are created on the Dev Spaces cluster, never on the deploy cluster', async () => {
+  it('a call rejected for the caller (401, 404, 409 ...) is orange', async () => {
+    await request(t.app).get('/api/v1/pp1/workspaces'); // no token
+    const line = await requestLine('/api/v1/pp1/workspaces');
+    expect(line?.startsWith(COLORS.warn)).toBe(true);
+    expect(strip(line as string)).toContain('| WARN  | request');
+    expect(strip(line as string)).toContain('-> 401');
+  });
+
+  it('a call that fails on our side (5xx) is red, and the cause is logged in red too', async () => {
+    t.fakes.kube.failOnce('listNamespaces', new Error('boom: the cluster exploded'));
+    const res = await t.api('get', '/api/v1/pp1/workspaces');
+    expect(res.status).toBe(500);
+
+    const line = await requestLine('/api/v1/pp1/workspaces');
+    expect(line?.startsWith(COLORS.error)).toBe(true);
+    expect(strip(line as string)).toContain('| ERROR | request');
+    expect(strip(line as string)).toContain('-> 500');
+
+    const cause = raw.find((l) => l.includes('request.crashed'));
+    expect(cause?.startsWith(COLORS.error)).toBe(true);
+    expect(strip(cause as string)).toContain('error="boom: the cluster exploded"');
+  });
+
+  it('a user action that worked (create) is green: the call and the workspace event', async () => {
     const res = await t
       .api('post', '/api/v1/pp1/workspaces')
       .send({ devworkspaceValue: 'java-maven', csiid: '1001' });
     expect(res.status).toBe(200);
-    expect(t.fakes.kube.workspaces('pp1-devspaces-1001')).toHaveLength(1);
-    expect(deploy.namespaces.size).toBe(0);
-    expect(deploy.objects.size).toBe(0);
+    expect((await requestLine('/api/v1/pp1/workspaces'))?.startsWith(COLORS.success)).toBe(true);
+    const created = raw.find((l) => l.includes('workspace.created'));
+    expect(created?.startsWith(COLORS.success)).toBe(true);
+    expect(strip(created as string)).toMatch(
+      /\| OK {4}\| workspace\.created +\| soeid=pp1 {2}namespace=pp1-devspaces-1001 {2}workspace=java-maven-[0-9a-f]{4}$/,
+    );
   });
 
-  it('personal access tokens and git config also belong to the Dev Spaces cluster', async () => {
+  it('start and stop are green successes too', async () => {
+    const created = await t
+      .api('post', '/api/v1/pp1/workspaces')
+      .send({ devworkspaceValue: 'python', csiid: '1001' });
+    const id = created.body.id as string;
+    t.fakes.kube.setPhase('pp1-devspaces-1001', id, 'Running');
+    raw.length = 0;
+    await t.api('post', `/api/v1/pp1/workspaces/${id}/stop`);
+    expect(raw.find((l) => l.includes('workspace.stopped'))?.startsWith(COLORS.success)).toBe(true);
+    t.fakes.kube.setPhase('pp1-devspaces-1001', id, 'Stopped');
+    await t.api('post', `/api/v1/pp1/workspaces/${id}/start`);
+    expect(raw.find((l) => l.includes('workspace.started'))?.startsWith(COLORS.success)).toBe(true);
+  });
+
+  it('never prints a secret, and every entry stays readable text', async () => {
     const pat = `ghp_${'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8'}`;
-    expect((await t.api('post', '/api/v1/pp1/pats/main').send({ csiid: '1001', token: pat })).status).toBe(
-      201,
-    );
-    expect(
-      (await t.api('put', '/api/v1/pp1/gitconfig').send({ csiid: '1001', content: '[user]\n  name = P\n' }))
-        .status,
-    ).toBe(200);
-    expect(deploy.objects.size).toBe(0);
-  });
-});
-
-describe('readiness checks both clusters when they are different', () => {
-  it('reports each cluster', async () => {
-    const res = await request(t.app).get('/readyz');
-    expect(res.status).toBe(200);
-    expect(res.body.checks).toEqual({ kubernetes: 'ok', deployCluster: 'ok', postgres: 'ok' });
-  });
-
-  it('is not ready when only the deploy cluster is down', async () => {
-    deploy.failOnce('ping', new Error('deploy cluster unreachable'));
-    const res = await request(t.app).get('/readyz');
-    expect(res.status).toBe(503);
-    expect(res.body.checks).toEqual({ kubernetes: 'ok', deployCluster: 'unavailable', postgres: 'ok' });
-  });
-
-  it('is not ready when only the Dev Spaces cluster is down', async () => {
-    t.fakes.kube.failOnce('ping', new Error('dev spaces cluster unreachable'));
-    const res = await request(t.app).get('/readyz');
-    expect(res.status).toBe(503);
-    expect(res.body.checks).toEqual({ kubernetes: 'unavailable', deployCluster: 'ok', postgres: 'ok' });
-  });
-});
-
-describe('with a single cluster (the default, as in the team’s current environment)', () => {
-  it('uses the same cluster for deployment projects and reports one cluster check', async () => {
-    const single = await startIntegration();
-    try {
-      expect(single.container.deployKube).toBe(single.container.kube);
-      expect((await single.api('post', '/api/v1/pp1/deployment-projects').send({ csiid: '5' })).status).toBe(
-        201,
-      );
-      expect(single.fakes.kube.namespaces.has('pp1-devspaces-deploy-5')).toBe(true);
-      const ready = await request(single.app).get('/readyz');
-      expect(ready.body.checks).toEqual({ kubernetes: 'ok', postgres: 'ok' });
-    } finally {
-      await single.close();
-    }
-  });
-});
-
-/tests/integration/metrics-db-and-wiring.test.ts
-import { describe, expect, it } from 'vitest';
-import { createProductionDependencies, buildContainer } from '../../src/container.js';
-import { NoopMetricsStore } from '../../src/infra/db/MetricsRepository.js';
-import { KubeClient } from '../../src/infra/kube/KubeClient.js';
-import { EmailNotifier, NoopNotifier } from '../../src/infra/email/EmailNotifier.js';
-import { MetricsRecorder } from '../../src/services/MetricsRecorder.js';
-import { silentLogger } from '../../src/utils/logger.js';
-import { FakeClock } from '../helpers/fakes.js';
-import { makeConfig, makePgMemRepository, writeTestKubeconfig } from '../helpers/testkit.js';
-
-const kubeconfig = writeTestKubeconfig();
-
-/**
- * The table as the ORIGINAL service wrote it: no workspaceversion / editorname, but an errordetail column.
- * It lives in `public` here because pg-mem reports every table under `public` in information_schema (real Postgres
- * keeps the `metrics` schema; the exact catalog SQL for that is pinned in tests/unit/infra/MetricsRepository.test.ts).
- */
-const LEGACY_TABLE_SQL = `
-  CREATE TABLE public."devspaces-metrics-dev" (
-    id SERIAL PRIMARY KEY,
-    "timestamp" TIMESTAMP,
-    csiid VARCHAR(32),
-    soeid VARCHAR(64),
-    eventtype VARCHAR(32),
-    resourcename VARCHAR(255),
-    resourcetype VARCHAR(64),
-    status JSONB,
-    limitcpu NUMERIC,
-    limitmemory NUMERIC,
-    requestcpu NUMERIC,
-    requestmemory NUMERIC,
-    duration INTERVAL,
-    useraction VARCHAR(32),
-    storage NUMERIC,
-    errordetail TEXT
-  );`;
-
-describe('writing into the EXISTING table of the Orion database', () => {
-  const base = {
-    timestamp: new Date('2026-03-04T05:06:07.089Z'),
-    csiid: '177398',
-    soeid: 'pp58386',
-    eventtype: 'create',
-    resourcename: 'java-maven-ab12',
-    resourcetype: 'workspace',
-    status: { failed: false, error: '', message: '' },
-    useraction: 'user',
-    limitcpu: 2,
-    limitmemory: 4,
-    requestcpu: 0.5,
-    requestmemory: 1,
-    duration: '2 hours 5 minutes',
-    storage: 3,
-    workspaceversion: '2.0.0',
-    editorname: 'vscode',
-  } as const;
-
-  it('works with a table shaped like the original one, using the configured dev table name', async () => {
-    const { repo, query } = await makePgMemRepository({
-      sql: LEGACY_TABLE_SQL,
-      table: 'public."devspaces-metrics-dev"',
-    });
-    await repo.insert(base);
-    await repo.insert({
-      ...base,
-      eventtype: 'delete',
-      status: { failed: true, error: 'namespace is terminating', message: '' },
-    });
-
-    const rows = await query('SELECT * FROM public."devspaces-metrics-dev" ORDER BY id');
-    expect(rows).toHaveLength(2);
-    expect(rows[0]).toMatchObject({
-      soeid: 'pp58386',
-      csiid: '177398',
-      eventtype: 'create',
-      errordetail: null,
-    });
-    expect(rows[1]).toMatchObject({ eventtype: 'delete', errordetail: 'namespace is terminating' });
-    expect(Number(rows[0]?.limitcpu)).toBe(2);
-    expect(rows[0]).not.toHaveProperty('workspaceversion');
-    // the timestamp is stored as the UTC wall-clock time, exactly as the original service did
-    expect(new Date(rows[0]?.timestamp as Date).toISOString()).toBe('2026-03-04T05:06:07.089Z');
-  });
-
-  it('creates nothing: the database has exactly the objects it started with', async () => {
-    const { repo, query } = await makePgMemRepository({
-      sql: LEGACY_TABLE_SQL,
-      table: 'public."devspaces-metrics-dev"',
-    });
-    const snapshot = () =>
-      query(
-        `SELECT table_schema, table_name FROM information_schema.tables
-          WHERE table_schema NOT IN ('information_schema', 'pg_catalog') ORDER BY 1, 2`,
-      );
-    const before = await snapshot();
-    await repo.insert(base);
-    await repo.ping();
-    expect(await snapshot()).toEqual(before);
-    expect(before).toEqual([{ table_schema: 'public', table_name: 'devspaces-metrics-dev' }]);
-  });
-
-  it('reports a missing table instead of creating it', async () => {
-    const { repo, query } = await makePgMemRepository({
-      sql: 'CREATE SCHEMA metrics;',
-      table: 'metrics."devspaces-metrics-dev"',
-    });
-    await expect(repo.insert(base)).rejects.toThrow();
-    expect(await query(`SELECT table_name FROM information_schema.tables`)).toEqual([]);
-  });
-});
-
-describe('metrics table (test fixture + repository on a real SQL engine)', () => {
-  it('stores every column of a record', async () => {
-    const { repo, query } = await makePgMemRepository();
-    await repo.insert({
-      timestamp: new Date('2026-03-04T05:06:07Z'),
-      csiid: '1001',
-      soeid: 'pp1',
-      eventtype: 'create',
-      resourcename: 'java-maven-ab12',
-      resourcetype: 'workspace',
-      status: { failed: false, error: '', message: 'ok' },
-      useraction: 'user',
-      limitcpu: 2.5,
-      limitmemory: 4,
-      requestcpu: 0.5,
-      requestmemory: 1,
-      duration: '1 minute',
-      storage: 3,
-      workspaceversion: '2.0.0',
-      editorname: 'vscode',
-    });
-    const [row] = await query('SELECT * FROM metrics."devspaces-metrics"');
-    expect(row).toMatchObject({
-      csiid: '1001',
-      soeid: 'pp1',
-      eventtype: 'create',
-      resourcename: 'java-maven-ab12',
-      resourcetype: 'workspace',
-      duration: '1 minute',
-      useraction: 'user',
-      workspaceversion: '2.0.0',
-      editorname: 'vscode',
-      status: { failed: false, error: '', message: 'ok' },
-    });
-    expect(Number(row?.limitcpu)).toBe(2.5);
-    expect(Number(row?.storage)).toBe(3);
-    expect(new Date(String(row?.timestamp)).toISOString()).toBe('2026-03-04T05:06:07.000Z');
-    expect(row?.id).toBeDefined();
-  });
-
-  it('supports the dashboard questions: counts per stack and failures', async () => {
-    const { repo, query } = await makePgMemRepository();
-    const recorder = new MetricsRecorder(repo, new FakeClock(), silentLogger);
-    const base = { soeid: 'pp1', eventtype: 'create', resourcetype: 'workspace' } as const;
-    await recorder.record({ ...base, resourcename: 'a', workspaceversion: '1' });
-    await recorder.record({ ...base, soeid: 'pp2', resourcename: 'b', workspaceversion: '1' });
-    await recorder.record({
-      ...base,
-      resourcename: 'c',
-      status: { failed: true, error: 'quota', message: '' },
-    });
-
-    const users = await query('SELECT COUNT(DISTINCT soeid) AS n FROM metrics."devspaces-metrics"');
-    expect(Number(users[0]?.n)).toBe(2);
-    const failed = await query(
-      `SELECT resourcename FROM metrics."devspaces-metrics" WHERE status->>'failed' = 'true'`,
-    );
-    expect(failed).toEqual([{ resourcename: 'c' }]);
-  });
-
-  it('pings and the recorder survives a broken table', async () => {
-    const { repo } = await makePgMemRepository();
-    await expect(repo.ping()).resolves.toBeUndefined();
-    const broken = new (class extends Object {
-      async insert(): Promise<void> {
-        throw new Error('relation "metrics.devspaces-metrics" does not exist');
-      }
-      async ping(): Promise<void> {}
-      async close(): Promise<void> {}
-    })();
-    await expect(
-      new MetricsRecorder(broken, new FakeClock(), silentLogger).record({
-        soeid: 'pp1',
-        eventtype: 'create',
-        resourcetype: 'workspace',
-      }),
-    ).resolves.toBeUndefined();
-  });
-});
-
-describe('production wiring', () => {
-  it('fails fast at startup when there is no cluster configuration', () => {
-    const config = makeConfig({ KUBECONFIG_PATH: '/no/such/file' });
-    expect(() => createProductionDependencies(config, silentLogger)).toThrow();
-  });
-
-  it('uses no-op adapters when Postgres and mail are disabled', () => {
-    const config = makeConfig({ KUBECONFIG_PATH: kubeconfig });
-    const deps = createProductionDependencies(config, silentLogger);
-    expect(deps.metrics).toBeInstanceOf(NoopMetricsStore);
-    expect(deps.notifier).toBeInstanceOf(NoopNotifier);
-    expect(deps.registry).toBeDefined();
-    expect(deps.kube).toBeDefined();
-  });
-
-  describe('with the team’s token-based environment (no kubeconfig file at all)', () => {
-    const team = {
-      CLUSTER_API_URL: 'https://api.namctigtd001d.ecs.dyn.nsroot.net:6443',
-      devSpacesClusterToken001d: 'fake-devspaces-token',
-      devOpsToken004d: 'fake-devops-token',
-      NODE_TLS_REJECT_UNAUTHORIZED: '0',
-    };
-
-    it('connects with the cluster URL and token, and uses one cluster for everything', () => {
-      const deps = createProductionDependencies(makeConfig(team), silentLogger);
-      expect(deps.kube).toBeInstanceOf(KubeClient);
-      expect(deps.deployKube).toBeUndefined(); // DEPLOY_CLUSTER_API_URL is not set
-      const container = buildContainer(makeConfig(team), silentLogger, deps);
-      expect(container.deployKube).toBe(container.kube);
-    });
-
-    it('builds a second client for a different deploy cluster, authenticated with devOpsToken004d', () => {
-      const config = makeConfig({
-        ...team,
-        DEPLOY_CLUSTER_API_URL: 'https://api.namctiswd004d.ecs.dyn.nsroot.net:6443',
-      });
-      const deps = createProductionDependencies(config, silentLogger);
-      expect(deps.kube).toBeInstanceOf(KubeClient);
-      expect(deps.deployKube).toBeInstanceOf(KubeClient);
-      expect(deps.deployKube).not.toBe(deps.kube);
-      expect(config.cluster.deployToken).toBe('fake-devops-token');
-      expect(config.cluster.token).toBe('fake-devspaces-token');
-    });
-  });
-
-  it('uses the email notifier and a user directory when configured', () => {
-    const config = makeConfig({
-      KUBECONFIG_PATH: kubeconfig,
-      NOTIFICATION_MAIL_URL: 'http://mail.test',
-      USER_DIRECTORY_GRAPHQL_URL: 'http://dir.test/graphql',
-    });
-    expect(createProductionDependencies(config, silentLogger).notifier).toBeInstanceOf(EmailNotifier);
-  });
-
-  it('builds a container exposing every service', () => {
-    const config = makeConfig({ KUBECONFIG_PATH: kubeconfig });
-    const container = buildContainer(
-      config,
-      silentLogger,
-      createProductionDependencies(config, silentLogger),
-    );
-    expect(Object.keys(container).sort()).toEqual(
-      [
-        'config',
-        'deployKube',
-        'deployments',
-        'gitConfig',
-        'kube',
-        'logger',
-        'metrics',
-        'namespaces',
-        'pats',
-        'recorder',
-        'registry',
-        'workspaces',
-      ].sort(),
-    );
+    t.fakes.kube.seedNamespace('pp1-devspaces-1001', 'pp1', '1001');
+    await t.api('post', '/api/v1/pp1/pats/main').send({ csiid: '1001', token: pat });
+    expect(raw.join('\n')).not.toContain(pat);
+    for (const line of raw) expect(line).not.toMatch(/\{"time"|\[object Object\]|undefined/);
   });
 });
 
@@ -2171,6 +2377,27 @@ describe('cluster tokens', () => {
   });
 });
 
+describe('logging settings', () => {
+  const base = { ...TEAM_ENV };
+
+  it('defaults to the readable coloured format', () => {
+    const c = loadConfig(base);
+    expect(c.logFormat).toBe('pretty');
+    expect(c.logColor).toBe(true);
+  });
+
+  it('LOG_FORMAT=json switches to one JSON object per line', () => {
+    expect(loadConfig({ ...base, LOG_FORMAT: 'json' }).logFormat).toBe('json');
+    expect(() => loadConfig({ ...base, LOG_FORMAT: 'xml' })).toThrow(/LOG_FORMAT/);
+  });
+
+  it('colours can be switched off with LOG_COLOR=false or the standard NO_COLOR variable', () => {
+    expect(loadConfig({ ...base, LOG_COLOR: 'false' }).logColor).toBe(false);
+    expect(loadConfig({ ...base, NO_COLOR: '1' }).logColor).toBe(false);
+    expect(loadConfig({ ...base, NO_COLOR: '' }).logColor).toBe(true);
+  });
+});
+
 describe('address helpers', () => {
   it('clusterNameOf', () => {
     expect(clusterNameOf('https://api.namctigtd001d.ecs.dyn.nsroot.net:6443')).toBe('namctigtd001d');
@@ -2195,695 +2422,344 @@ describe('address helpers', () => {
   });
 });
 
-/tests/unit/factories/workspace-factory.test.ts
+/tests/unit/utils/log-format.test.ts
 import { describe, expect, it } from 'vitest';
-import type { Devfile } from '../../../src/domain/types.js';
-import { buildLogRecord } from '../../../src/factories/log-factory.js';
-import { buildDevWorkspaceObject, WORKSPACE_LABELS } from '../../../src/factories/workspace-factory.js';
-import { parseDevfile } from '../../../src/factories/devfile-updater.js';
-import { SAMPLE_DEVFILE_YAML } from '../../helpers/sample-devfile.js';
+import {
+  COLORS,
+  RESET,
+  formatLocalTime,
+  formatPretty,
+  type LogEntry,
+  type LogKind,
+} from '../../../src/utils/log-format.js';
 
-const args = (over: Partial<Parameters<typeof buildDevWorkspaceObject>[0]> = {}) => ({
-  name: 'java-maven-ab12',
-  namespace: 'pp1-devspaces-1',
-  csiid: '1',
-  stack: 'java-maven',
-  stackVersion: '2.0.0',
-  devfile: parseDevfile(SAMPLE_DEVFILE_YAML),
-  editor: 'vscode' as const,
-  editorId: 'che-incubator/che-code/latest',
-  devSpacesServiceFqdn: 'https://devspaces.test',
-  ...over,
+const time = new Date(2026, 0, 2, 3, 4, 5, 678); // local time, as the formatter prints it
+const T = '2026-01-02 03:04:05.678';
+const entry = (kind: LogKind, event: string, fields: Record<string, unknown> = {}): LogEntry => ({
+  time,
+  kind,
+  event,
+  fields,
 });
+const plain = (e: LogEntry) => formatPretty(e, false);
 
-describe('buildDevWorkspaceObject', () => {
-  it('builds a started DevWorkspace with the stack inlined and the editor contributed', () => {
-    const dw = buildDevWorkspaceObject(args());
-    expect(dw).toMatchObject({
-      apiVersion: 'workspace.devfile.io/v1alpha2',
-      kind: 'DevWorkspace',
-      metadata: { name: 'java-maven-ab12', namespace: 'pp1-devspaces-1' },
-      spec: { started: true, routingClass: 'che' },
-    });
-    expect(dw.spec?.template?.components).toHaveLength(4);
-    expect(dw.spec?.template?.commands).toHaveLength(1);
-    expect(dw.spec?.template?.events).toBeDefined();
-    expect(dw.spec?.contributions).toEqual([
-      {
-        name: 'ide',
-        uri: 'https://devspaces.test/dashboard/api/editors/devfile?che-editor=che-incubator/che-code/latest',
-      },
-    ]);
+describe('colours: errors red, warnings orange, successes green, everything else white', () => {
+  it('uses exactly these ANSI codes', () => {
+    expect(COLORS.error).toBe('\u001b[31m'); // red
+    expect(COLORS.warn).toBe('\u001b[38;5;208m'); // orange
+    expect(COLORS.success).toBe('\u001b[32m'); // green
+    expect(COLORS.info).toBe('\u001b[97m'); // bright white
+    expect(COLORS.debug).toBe(COLORS.info); // white as well
   });
 
-  it('uses the editor id exactly as configured, e.g. the team’s che-idea-server value', () => {
-    const dw = buildDevWorkspaceObject(
-      args({ editor: 'intellij', editorId: 'che-incubator/che-idea-server/latest' }),
-    );
-    expect(dw.spec?.contributions?.[0]?.uri).toBe(
-      'https://devspaces.test/dashboard/api/editors/devfile?che-editor=che-incubator/che-idea-server/latest',
-    );
-    expect(dw.spec?.contributions?.[0]?.uri).not.toMatch(/che-incubator.*che-incubator/);
+  it.each(['error', 'warn', 'success', 'info', 'debug'] as const)(
+    '%s line is painted in its colour',
+    (kind) => {
+      const out = formatPretty(entry(kind, 'some.event', { a: 1 }), true);
+      expect(out.startsWith(COLORS[kind])).toBe(true);
+      expect(out.endsWith(RESET)).toBe(true);
+    },
+  );
+
+  it('every line of a multi-line entry is painted on its own, the separating blank line is not', () => {
+    const out = formatPretty(entry('error', 'boom', { a: { b: 1 }, c: 2 }), true);
+    const lines = out.split('\n');
+    expect(lines.length).toBeGreaterThan(3);
+    expect(lines.at(-1)).toBe('');
+    for (const line of lines.slice(0, -1)) {
+      expect(line.startsWith(COLORS.error), line).toBe(true);
+      expect(line.endsWith(RESET), line).toBe(true);
+      expect(line.slice(COLORS.error.length, -RESET.length)).not.toContain('\u001b');
+    }
   });
 
-  it('records stack metadata in annotations and labels', () => {
-    const dw = buildDevWorkspaceObject(
-      args({ editor: 'goland', editorId: 'che-incubator/che-goland/latest' }),
-    );
-    expect(dw.metadata?.annotations).toMatchObject({
-      dw: 'java-maven-ab12',
-      workspaceVersion: '2.0.0',
-      workspaceDisplayName: 'Java Maven',
-      workspaceDescription: 'Java 17 with Maven',
-      editorDisplayName: 'GoLand',
-    });
-    expect(dw.metadata?.labels).toEqual({
-      [WORKSPACE_LABELS.csiid]: '1',
-      [WORKSPACE_LABELS.stack]: 'java-maven',
-      [WORKSPACE_LABELS.managedBy]: 'workspace-mgr',
-    });
-  });
-
-  it('adds the requested repository as a project, with a branch when given', () => {
-    const dw = buildDevWorkspaceObject(
-      args({ repositoryUrl: 'https://github.com/acme/My_Repo.git', repositoryBranch: 'develop' }),
-    );
-    expect(dw.spec?.template?.projects).toEqual([
-      {
-        name: 'my-repo',
-        git: {
-          remotes: { origin: 'https://github.com/acme/My_Repo.git' },
-          checkoutFrom: { revision: 'develop' },
-        },
-      },
-    ]);
-  });
-
-  it('keeps stack projects and omits checkoutFrom without a branch', () => {
-    const devfile: Devfile = { components: [], projects: [{ name: 'starter' }] };
-    const dw = buildDevWorkspaceObject(args({ devfile, repositoryUrl: 'https://github.com/acme/app' }));
-    expect(dw.spec?.template?.projects).toEqual([
-      { name: 'starter' },
-      { name: 'app', git: { remotes: { origin: 'https://github.com/acme/app' } } },
-    ]);
-  });
-
-  it('omits projects, commands and events when the stack has none', () => {
-    const dw = buildDevWorkspaceObject(args({ devfile: { components: [] } }));
-    expect(dw.spec?.template).not.toHaveProperty('projects');
-    expect(dw.spec?.template).not.toHaveProperty('commands');
-    expect(dw.spec?.template).not.toHaveProperty('events');
-  });
-
-  it('falls back to the stack name for the display name', () => {
-    const dw = buildDevWorkspaceObject(args({ devfile: { components: [] } }));
-    expect(dw.metadata?.annotations?.workspaceDisplayName).toBe('java-maven');
+  it('prints no escape codes at all when colour is off', () => {
+    for (const kind of ['error', 'warn', 'success', 'info', 'debug'] as const) {
+      expect(plain(entry(kind, 'e', { a: { b: 1 } }))).not.toContain('\u001b');
+    }
   });
 });
 
-describe('buildLogRecord', () => {
-  const now = new Date('2026-01-01T00:00:00Z');
-  it('fills the legacy defaults', () => {
-    expect(buildLogRecord({ soeid: 'pp1', eventtype: 'create', resourcetype: 'workspace' }, now)).toEqual({
-      timestamp: now,
-      csiid: '',
-      soeid: 'pp1',
-      eventtype: 'create',
-      resourcename: '',
-      resourcetype: 'workspace',
-      status: { failed: false, error: '', message: '' },
-      useraction: 'user',
-      limitcpu: 0,
-      limitmemory: 0,
-      requestcpu: 0,
-      requestmemory: 0,
-      duration: '0 seconds',
-      storage: 0,
-      workspaceversion: '',
-      editorname: '',
-    });
+describe('layout', () => {
+  it('formats local time as YYYY-MM-DD HH:mm:ss.SSS', () => {
+    expect(formatLocalTime(time)).toBe(T);
+    expect(formatLocalTime(new Date(2026, 10, 9, 23, 59, 1, 5))).toBe('2026-11-09 23:59:01.005');
   });
-  it('keeps what is given', () => {
-    const r = buildLogRecord(
-      {
+
+  it('a bare event is one line: time | LEVEL | event', () => {
+    expect(plain(entry('info', 'server.shutdown'))).toBe(`${T} | INFO  | server.shutdown`);
+  });
+
+  it('level badges all have the same width so the columns line up', () => {
+    const widths = (['error', 'warn', 'success', 'info', 'debug'] as const).map((k) =>
+      plain(entry(k, 'e')).indexOf(' | e'),
+    );
+    expect(new Set(widths).size).toBe(1);
+    expect(plain(entry('error', 'e'))).toContain('| ERROR |');
+    expect(plain(entry('warn', 'e'))).toContain('| WARN  |');
+    expect(plain(entry('success', 'e'))).toContain('| OK    |');
+    expect(plain(entry('debug', 'e'))).toContain('| DEBUG |');
+  });
+
+  it('a few short fields stay on the same line, as key=value separated by two spaces', () => {
+    expect(plain(entry('warn', 'metrics.columns_missing', { table: 't1', missing: 'a,b' }))).toBe(
+      `${T} | WARN  | ${'metrics.columns_missing'.padEnd(30)} | table=t1  missing=a,b`,
+    );
+  });
+
+  it('quotes inline values that contain spaces or =, and escapes newlines', () => {
+    const out = plain(
+      entry('error', 'x', { error: 'cluster is down', eq: 'a=b', multi: 'l1\nl2', bare: 'ok-1' }),
+    );
+    expect(out).toContain('error="cluster is down"');
+    expect(out).toContain('eq="a=b"');
+    expect(out).toContain('multi=l1\\nl2'); // the newline becomes a visible \n, so the entry stays on one line
+    expect(out).toContain('bare=ok-1');
+    expect(out.split('\n')).toHaveLength(1);
+  });
+
+  it('shows the per-request line as: METHOD path -> status (ms) plus the ids', () => {
+    const out = plain(
+      entry('success', 'request', {
+        method: 'GET',
+        path: '/api/v1/pp1/workspaces',
+        status: 200,
+        ms: 12,
+        requestId: 'r-1',
         soeid: 'pp1',
-        eventtype: 'delete',
-        resourcetype: 'workspace',
-        limitcpu: 2,
-        useraction: 'system',
-        csiid: '9',
-      },
-      now,
+      }),
     );
-    expect(r).toMatchObject({ limitcpu: 2, useraction: 'system', csiid: '9' });
+    expect(out).toBe(
+      `${T} | OK    | ${'request'.padEnd(30)} | GET    /api/v1/pp1/workspaces -> 200 (12 ms)  requestId=r-1  soeid=pp1`,
+    );
+  });
+
+  it('leaves out fields that have no value (a request without a user)', () => {
+    const out = plain(
+      entry('success', 'request', { method: 'GET', path: '/healthz', status: 200, ms: 1, soeid: undefined }),
+    );
+    expect(out).not.toContain('soeid');
+    expect(out).not.toContain('undefined');
+  });
+
+  it('puts nested and long data on indented lines with aligned colons, and ends with a blank line', () => {
+    const out = plain(
+      entry('success', 'server.listening', {
+        port: 8080,
+        cluster: 'https://x',
+        editors: { vscode: 'a', intellij: 'b' },
+        postgres: 'disabled',
+        empty: {},
+        list: [1, 2],
+        gone: undefined,
+      }),
+    );
+    expect(out).toBe(
+      [
+        `${T} | OK    | server.listening`,
+        '    port     : 8080',
+        '    cluster  : https://x',
+        '    editors:',
+        '      vscode   : a',
+        '      intellij : b',
+        '    postgres : disabled',
+        '    empty    : {}',
+        '    list     : [1,2]',
+        '',
+      ].join('\n'),
+    );
+  });
+
+  it('switches to the indented layout for many fields, or a long value', () => {
+    const many = plain(entry('info', 'e', { a: 1, b: 2, c: 3, d: 4, e: 5, f: 6, g: 7 }));
+    expect(many.split('\n')[0]).toBe(`${T} | INFO  | e`);
+    expect(many).toContain('    g : 7');
+
+    const long = plain(entry('error', 'e', { error: 'x'.repeat(100) }));
+    expect(long.split('\n')[0]).toBe(`${T} | ERROR | e`);
+    expect(long).toContain(`    error : ${'x'.repeat(100)}`);
+  });
+
+  it('an error with a request id and a message gets its own block, easy to read', () => {
+    const out = plain(
+      entry('error', 'request.failed', {
+        requestId: '7989eb27-2d84-4d15-aa0b-95003ff51f85',
+        code: 'UPSTREAM_ERROR',
+        error: 'Devfile registry catalog: No response received from server',
+      }),
+    );
+    expect(out).toBe(
+      [
+        `${T} | ERROR | request.failed`,
+        '    requestId : 7989eb27-2d84-4d15-aa0b-95003ff51f85',
+        '    code      : UPSTREAM_ERROR',
+        '    error     : Devfile registry catalog: No response received from server',
+        '',
+      ].join('\n'),
+    );
+  });
+
+  it('treats a "request" event without method/path/status as an ordinary entry', () => {
+    expect(plain(entry('info', 'request', { note: 'hi' }))).toBe(
+      `${T} | INFO  | ${'request'.padEnd(30)} | note=hi`,
+    );
   });
 });
 
-/tests/unit/infra/KubeClient.test.ts
-import { CoreV1Api, KubeConfig, KubernetesObjectApi } from '@kubernetes/client-node';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { KubeClient, createKubeConfig, loadKubeConfig } from '../../../src/infra/kube/KubeClient.js';
-import { ConflictError, ForbiddenError, NotFoundError, UpstreamError } from '../../../src/utils/errors.js';
+/tests/unit/utils/logger.test.ts
+import { describe, expect, it } from 'vitest';
+import { createLogger, redact } from '../../../src/utils/logger.js';
 
-const apiError = (code: number) =>
-  Object.assign(new Error(`HTTP ${code}`), { code, body: { code, message: 'k8s says no' } });
-
-function client(): KubeClient {
-  const kc = new KubeConfig();
-  kc.loadFromOptions({
-    clusters: [{ name: 'c', server: 'https://localhost:6443', skipTLSVerify: true }],
-    users: [{ name: 'u', token: 'test-token' }],
-    contexts: [{ name: 'x', cluster: 'c', user: 'u' }],
-    currentContext: 'x',
-  });
-  return new KubeClient(kc);
+function capture(level: Parameters<typeof createLogger>[0] = 'info') {
+  const lines: Record<string, unknown>[] = [];
+  return { lines, logger: createLogger(level, (l) => lines.push(JSON.parse(l))) };
 }
 
-beforeEach(() => vi.restoreAllMocks());
-afterEach(() => vi.restoreAllMocks());
-
-describe('namespaces', () => {
-  it('lists with a label selector', async () => {
-    const spy = vi
-      .spyOn(CoreV1Api.prototype, 'listNamespace')
-      .mockResolvedValue({ items: [{ metadata: { name: 'a' } }] } as never);
-    expect(await client().listNamespaces('k=v')).toEqual([{ metadata: { name: 'a' } }]);
-    expect(spy).toHaveBeenCalledWith({ labelSelector: 'k=v' });
+describe('logger', () => {
+  it('writes one JSON line with level, event and fields', () => {
+    const { lines, logger } = capture();
+    logger.info('hello', { a: 1 });
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({ level: 'info', event: 'hello', a: 1 });
+    expect(typeof lines[0]?.time).toBe('string');
   });
 
-  it('getNamespace returns null on 404 and translates other errors', async () => {
-    const spy = vi.spyOn(CoreV1Api.prototype, 'readNamespace');
-    spy.mockRejectedValueOnce(apiError(404));
-    expect(await client().getNamespace('x')).toBeNull();
-    spy.mockRejectedValueOnce(apiError(403));
-    await expect(client().getNamespace('x')).rejects.toBeInstanceOf(ForbiddenError);
-    spy.mockResolvedValueOnce({ metadata: { name: 'x' } } as never);
-    expect(await client().getNamespace('x')).toEqual({ metadata: { name: 'x' } });
+  it('filters below the configured level', () => {
+    const { lines, logger } = capture('warn');
+    logger.debug('d');
+    logger.info('i');
+    logger.warn('w');
+    logger.error('e');
+    expect(lines.map((l) => l.event)).toEqual(['w', 'e']);
   });
 
-  it('createNamespace passes the body and maps conflicts', async () => {
-    const spy = vi.spyOn(CoreV1Api.prototype, 'createNamespace');
-    spy.mockResolvedValueOnce({ metadata: { name: 'n' } } as never);
-    await client().createNamespace({ metadata: { name: 'n' } });
-    expect(spy).toHaveBeenCalledWith({ body: { metadata: { name: 'n' } } });
-    spy.mockRejectedValueOnce(apiError(409));
-    await expect(client().createNamespace({ metadata: { name: 'n' } })).rejects.toBeInstanceOf(ConflictError);
+  it('is silent when asked', () => {
+    const { lines, logger } = capture('silent');
+    logger.error('e');
+    expect(lines).toHaveLength(0);
   });
 
-  it('deleteNamespace is false when already gone', async () => {
-    const spy = vi.spyOn(CoreV1Api.prototype, 'deleteNamespace');
-    spy.mockResolvedValueOnce({} as never);
-    expect(await client().deleteNamespace('n')).toBe(true);
-    spy.mockRejectedValueOnce(apiError(404));
-    expect(await client().deleteNamespace('n')).toBe(false);
+  it('child loggers carry bindings', () => {
+    const { lines, logger } = capture();
+    logger.child({ requestId: 'r1' }).info('x', { b: 2 });
+    expect(lines[0]).toMatchObject({ requestId: 'r1', b: 2 });
   });
 
-  it('ping calls the API discovery endpoint and maps failures', async () => {
-    const spy = vi.spyOn(CoreV1Api.prototype, 'getAPIResources');
-    spy.mockResolvedValueOnce({} as never);
-    await expect(client().ping()).resolves.toBeUndefined();
-    spy.mockRejectedValueOnce(apiError(500));
-    await expect(client().ping()).rejects.toBeInstanceOf(UpstreamError);
-  });
-});
-
-describe('createProject', () => {
-  it('sends a ProjectRequest and falls back to the requested name', async () => {
-    const spy = vi
-      .spyOn(KubernetesObjectApi.prototype, 'create')
-      .mockResolvedValue({ kind: 'Project' } as never);
-    const result = await client().createProject({ metadata: { name: 'proj' } });
-    expect(spy.mock.calls[0]?.[0]).toMatchObject({
-      apiVersion: 'project.openshift.io/v1',
-      kind: 'ProjectRequest',
+  it('redacts sensitive keys, nested and in arrays', () => {
+    const { lines, logger } = capture();
+    logger.info('x', {
+      token: 'ghp_secret',
+      nested: { password: 'p', ok: 1 },
+      list: [{ authorization: 'Bearer x' }],
     });
-    expect(result.metadata?.name).toBe('proj');
-  });
-  it('keeps the name the platform returned', async () => {
-    vi.spyOn(KubernetesObjectApi.prototype, 'create').mockResolvedValue({
-      metadata: { name: 'actual' },
-    } as never);
-    expect((await client().createProject({ metadata: { name: 'proj' } })).metadata?.name).toBe('actual');
-  });
-});
-
-describe('namespaced objects', () => {
-  it('get reads by apiVersion/kind and returns null on 404', async () => {
-    const read = vi.spyOn(KubernetesObjectApi.prototype, 'read');
-    read.mockResolvedValueOnce({ metadata: { name: 's' } } as never);
-    expect(await client().get('Secret', 'ns', 's')).toEqual({ metadata: { name: 's' } });
-    expect(read.mock.calls[0]?.[0]).toEqual({
-      apiVersion: 'v1',
-      kind: 'Secret',
-      metadata: { name: 's', namespace: 'ns' },
+    expect(lines[0]).toMatchObject({
+      token: '[redacted]',
+      nested: { password: '[redacted]', ok: 1 },
+      list: [{ authorization: '[redacted]' }],
     });
-    read.mockRejectedValueOnce(apiError(404));
-    expect(await client().get('DevWorkspace', 'ns', 's')).toBeNull();
-    expect(read.mock.calls[1]?.[0]).toMatchObject({ apiVersion: 'workspace.devfile.io/v1alpha2' });
+    expect(JSON.stringify(lines[0])).not.toContain('ghp_secret');
   });
 
-  it('list passes namespace and selector', async () => {
-    const spy = vi
-      .spyOn(KubernetesObjectApi.prototype, 'list')
-      .mockResolvedValue({ items: [{ metadata: { name: 'a' } }] } as never);
-    expect(await client().list('ConfigMap', 'ns', 'a=b')).toHaveLength(1);
-    expect(spy.mock.calls[0]?.slice(0, 3)).toEqual(['v1', 'ConfigMap', 'ns']);
-    expect(spy.mock.calls[0]?.[7]).toBe('a=b');
-  });
-
-  it('create stamps apiVersion, kind and namespace onto the body', async () => {
-    const spy = vi
-      .spyOn(KubernetesObjectApi.prototype, 'create')
-      .mockResolvedValue({ metadata: { name: 'r' } } as never);
-    await client().create('Role', 'ns', { metadata: { name: 'r' } });
-    expect(spy.mock.calls[0]?.[0]).toMatchObject({
-      apiVersion: 'rbac.authorization.k8s.io/v1',
-      kind: 'Role',
-      metadata: { name: 'r', namespace: 'ns' },
+  it('success is an info-level line marked as a success, and hidden when only warnings are wanted', () => {
+    const { lines, logger } = capture();
+    logger.success('workspace.created', { workspace: 'w1' });
+    expect(lines[0]).toMatchObject({
+      level: 'info',
+      outcome: 'success',
+      event: 'workspace.created',
+      workspace: 'w1',
     });
+    const quiet = capture('warn');
+    quiet.logger.success('workspace.created');
+    expect(quiet.lines).toHaveLength(0);
   });
 
-  it('delete is false on 404', async () => {
-    const spy = vi.spyOn(KubernetesObjectApi.prototype, 'delete');
-    spy.mockResolvedValueOnce({} as never);
-    expect(await client().delete('Secret', 'ns', 's')).toBe(true);
-    spy.mockRejectedValueOnce(apiError(404));
-    expect(await client().delete('Secret', 'ns', 's')).toBe(false);
+  it('plain info lines carry no outcome', () => {
+    const { lines, logger } = capture();
+    logger.info('x');
+    expect(lines[0]).not.toHaveProperty('outcome');
   });
 
-  it('setWorkspaceStarted sends a merge patch for spec.started', async () => {
-    const spy = vi
-      .spyOn(KubernetesObjectApi.prototype, 'patch')
-      .mockResolvedValue({ spec: { started: false } } as never);
-    await client().setWorkspaceStarted('ns', 'ws', false);
-    expect(spy.mock.calls[0]?.[0]).toMatchObject({
-      kind: 'DevWorkspace',
-      metadata: { name: 'ws', namespace: 'ns' },
-      spec: { started: false },
+  describe('pretty format (terminal)', () => {
+    const now = () => new Date(2026, 0, 2, 3, 4, 5, 678);
+    const pretty = (level: Parameters<typeof createLogger>[0] = 'info', color = true) => {
+      const out: string[] = [];
+      return { out, logger: createLogger(level, (l) => out.push(l), {}, { format: 'pretty', color, now }) };
+    };
+
+    it('paints each kind in its colour: error red, warn orange, success green, info and debug white', () => {
+      const { out, logger } = pretty('debug');
+      logger.error('e');
+      logger.warn('w');
+      logger.success('s');
+      logger.info('i');
+      logger.debug('d');
+      expect(out).toEqual([
+        '\u001b[31m2026-01-02 03:04:05.678 | ERROR | e\u001b[0m',
+        '\u001b[38;5;208m2026-01-02 03:04:05.678 | WARN  | w\u001b[0m',
+        '\u001b[32m2026-01-02 03:04:05.678 | OK    | s\u001b[0m',
+        '\u001b[97m2026-01-02 03:04:05.678 | INFO  | i\u001b[0m',
+        '\u001b[97m2026-01-02 03:04:05.678 | DEBUG | d\u001b[0m',
+      ]);
     });
-    expect(spy.mock.calls[0]?.[5]).toBe('application/merge-patch+json');
-  });
 
-  it('wraps unexpected failures as UpstreamError', async () => {
-    vi.spyOn(KubernetesObjectApi.prototype, 'create').mockRejectedValue(apiError(500));
-    await expect(client().create('Secret', 'ns', { metadata: { name: 's' } })).rejects.toBeInstanceOf(
-      UpstreamError,
-    );
-  });
-});
+    it('writes one sink call per entry, plain when colour is off', () => {
+      const { out, logger } = pretty('info', false);
+      logger.info('a', { n: 1 });
+      logger.warn('b');
+      expect(out).toEqual([
+        `2026-01-02 03:04:05.678 | INFO  | ${'a'.padEnd(30)} | n=1`,
+        '2026-01-02 03:04:05.678 | WARN  | b',
+      ]);
+    });
 
-describe('apply', () => {
-  it('creates when nothing exists', async () => {
-    vi.spyOn(KubernetesObjectApi.prototype, 'read').mockRejectedValue(apiError(404));
-    const create = vi
-      .spyOn(KubernetesObjectApi.prototype, 'create')
-      .mockResolvedValue({ metadata: { name: 'q' } } as never);
-    await client().apply('ResourceQuota', 'ns', { metadata: { name: 'q' } });
-    expect(create).toHaveBeenCalledOnce();
-  });
+    it('applies the level filter, bindings of child loggers, and redaction', () => {
+      const { out, logger } = pretty('info', false);
+      logger.debug('hidden');
+      logger.child({ requestId: 'r1' }).info('x', { token: 'ghp_secret', ok: 1 });
+      expect(out).toHaveLength(1);
+      expect(out[0]).toContain('requestId=r1');
+      expect(out[0]).toContain('token=[redacted]');
+      expect(out[0]).not.toContain('ghp_secret');
+    });
 
-  it('replaces with the existing resourceVersion when the object exists', async () => {
-    vi.spyOn(KubernetesObjectApi.prototype, 'read').mockResolvedValue({
-      metadata: { name: 'q', resourceVersion: '77' },
-    } as never);
-    const replace = vi
-      .spyOn(KubernetesObjectApi.prototype, 'replace')
-      .mockResolvedValue({ metadata: { name: 'q' } } as never);
-    const create = vi.spyOn(KubernetesObjectApi.prototype, 'create');
-    await client().apply('ResourceQuota', 'ns', { metadata: { name: 'q' } });
-    expect(create).not.toHaveBeenCalled();
-    expect(replace.mock.calls[0]?.[0]).toMatchObject({
-      metadata: { name: 'q', namespace: 'ns', resourceVersion: '77' },
+    it('child loggers keep the format and colour of their parent', () => {
+      const { out, logger } = pretty('info', true);
+      logger.child({ a: 1 }).error('boom');
+      expect(out[0]?.startsWith('\u001b[31m')).toBe(true);
+    });
+
+    it('the default is still JSON, so existing log collectors keep working', () => {
+      const lines: string[] = [];
+      createLogger('info', (l) => lines.push(l)).info('x');
+      expect(JSON.parse(lines[0] as string)).toMatchObject({ event: 'x', level: 'info' });
     });
   });
 
-  it('recovers from losing a creation race by replacing the winner’s object', async () => {
-    const read = vi.spyOn(KubernetesObjectApi.prototype, 'read');
-    read.mockRejectedValueOnce(apiError(404));
-    read.mockResolvedValueOnce({ metadata: { name: 'q', resourceVersion: '5' } } as never);
-    vi.spyOn(KubernetesObjectApi.prototype, 'create').mockRejectedValue(apiError(409));
-    const replace = vi
-      .spyOn(KubernetesObjectApi.prototype, 'replace')
-      .mockResolvedValue({ metadata: { name: 'q' } } as never);
-    await client().apply('ResourceQuota', 'ns', { metadata: { name: 'q' } });
-    expect(replace).toHaveBeenCalledOnce();
+  it('serialises errors as name and message only', () => {
+    expect(redact(new Error('bad'))).toEqual({ name: 'Error', message: 'bad' });
   });
 
-  it('gives up with a Conflict when the race cannot be resolved', async () => {
-    vi.spyOn(KubernetesObjectApi.prototype, 'read').mockRejectedValue(apiError(404));
-    vi.spyOn(KubernetesObjectApi.prototype, 'create').mockRejectedValue(apiError(409));
-    await expect(client().apply('ResourceQuota', 'ns', { metadata: { name: 'q' } })).rejects.toBeInstanceOf(
-      ConflictError,
-    );
-  });
-
-  it('surfaces other creation errors', async () => {
-    vi.spyOn(KubernetesObjectApi.prototype, 'read').mockRejectedValue(apiError(404));
-    vi.spyOn(KubernetesObjectApi.prototype, 'create').mockRejectedValue(apiError(403));
-    await expect(client().apply('Secret', 'ns', { metadata: { name: 's' } })).rejects.toBeInstanceOf(
-      ForbiddenError,
-    );
-  });
-});
-
-describe('loadKubeConfig', () => {
-  it('fails clearly for a missing kubeconfig file', () => {
-    expect(() => loadKubeConfig('/no/such/kubeconfig')).toThrow();
-  });
-  it('loads default config otherwise without throwing', () => {
-    expect(() => loadKubeConfig()).not.toThrow();
-  });
-  it('NotFoundError is what a translated 404 looks like', async () => {
-    vi.spyOn(KubernetesObjectApi.prototype, 'patch').mockRejectedValue(apiError(404));
-    await expect(client().setWorkspaceStarted('ns', 'ws', true)).rejects.toBeInstanceOf(NotFoundError);
-  });
-});
-
-describe('createKubeConfig (cluster URL + bearer token, as the team exports them)', () => {
-  const API = 'https://api.namctigtd001d.ecs.dyn.nsroot.net:6443';
-
-  it('talks to the given cluster with the given token', () => {
-    const kc = createKubeConfig({ apiUrl: API, token: 'fake-token' });
-    expect(kc.getCurrentCluster()).toMatchObject({ server: API, skipTLSVerify: false });
-    expect(kc.getCurrentUser()).toMatchObject({ token: 'fake-token' });
-  });
-
-  it('does not verify the cluster certificate only when asked to (NODE_TLS_REJECT_UNAUTHORIZED=0)', () => {
-    expect(
-      createKubeConfig({ apiUrl: API, token: 't', skipTlsVerify: true }).getCurrentCluster()?.skipTLSVerify,
-    ).toBe(true);
-    expect(
-      createKubeConfig({ apiUrl: API, token: 't', skipTlsVerify: false }).getCurrentCluster()?.skipTLSVerify,
-    ).toBe(false);
-  });
-
-  it('a token wins over a kubeconfig file', () => {
-    const kc = createKubeConfig({ apiUrl: API, token: 'fake-token', kubeconfigPath: '/no/such/file' });
-    expect(kc.getCurrentCluster()?.server).toBe(API);
-  });
-
-  it('without a token it falls back to the kubeconfig file, then to the default configuration', () => {
-    expect(() => createKubeConfig({ apiUrl: API, kubeconfigPath: '/no/such/file' })).toThrow();
-    expect(() => createKubeConfig({ apiUrl: API })).not.toThrow();
-    expect(() => createKubeConfig({ apiUrl: '', token: 'ignored without a URL' })).not.toThrow();
-  });
-
-  it('the resulting config builds a working client', () => {
-    expect(() => new KubeClient(createKubeConfig({ apiUrl: API, token: 'fake-token' }))).not.toThrow();
-  });
-});
-
-/tests/unit/services/WorkspaceService.test.ts
-import { beforeEach, describe, expect, it } from 'vitest';
-import type { CreateWorkspaceInput } from '../../../src/domain/types.js';
-import { MetricsRecorder } from '../../../src/services/MetricsRecorder.js';
-import { NamespaceService } from '../../../src/services/NamespaceService.js';
-import { WorkspaceService, isActive, toWorkspace } from '../../../src/services/WorkspaceService.js';
-import {
-  NotFoundError,
-  UpstreamError,
-  WorkspaceConfigNotFoundError,
-  WorkspaceCountExceededError,
-  WorkspaceRunCountExceededError,
-} from '../../../src/utils/errors.js';
-import { silentLogger } from '../../../src/utils/logger.js';
-import { FakeClock, FakeMetricsStore, FakeRegistry } from '../../helpers/fakes.js';
-import { InMemoryKube } from '../../helpers/InMemoryKube.js';
-
-let kube: InMemoryKube;
-let metrics: FakeMetricsStore;
-let registry: FakeRegistry;
-let clock: FakeClock;
-let service: WorkspaceService;
-
-const input = (over: Partial<CreateWorkspaceInput> = {}): CreateWorkspaceInput => ({
-  soeid: 'pp1',
-  csiid: '1001',
-  devworkspaceValue: 'java-maven',
-  editor: 'vscode',
-  ...over,
-});
-
-beforeEach(() => {
-  clock = new FakeClock();
-  kube = new InMemoryKube(() => clock.now());
-  metrics = new FakeMetricsStore();
-  registry = new FakeRegistry();
-  const recorder = new MetricsRecorder(metrics, clock, silentLogger);
-  const namespaces = new NamespaceService(kube, recorder, { emailDomain: 'example.com' }, silentLogger);
-  service = new WorkspaceService(
-    kube,
-    namespaces,
-    registry,
-    recorder,
-    {
-      limits: { maxRunning: 2, maxTotal: 3 },
-      editors: {
-        vscode: 'che-incubator/che-code/latest',
-        intellij: 'che-incubator/che-idea/latest',
-        goland: 'che-incubator/che-goland/latest',
-      },
-      devSpacesServiceFqdn: 'https://devspaces.test',
-    },
-    clock,
-    silentLogger,
-  );
-});
-
-const wsNamespace = 'pp1-devspaces-1001';
-const onlyWorkspace = () => kube.workspaces()[0]!;
-
-describe('create', () => {
-  it('creates the namespace and a started DevWorkspace, and returns it', async () => {
-    const ws = await service.create(input());
-    expect(kube.namespaces.has(wsNamespace)).toBe(true);
-    expect(kube.workspaces()).toHaveLength(1);
-    expect(ws).toMatchObject({
-      namespace: wsNamespace,
-      csiid: '1001',
-      stack: 'java-maven',
-      version: '2.0.0',
-      displayName: 'Java Maven',
-      editor: 'Visual Studio Code',
-      phase: 'Starting',
-    });
-    expect(ws.id).toMatch(/^java-maven-[0-9a-f]{4}$/);
-    expect(onlyWorkspace().spec?.started).toBe(true);
-  });
-
-  it('uses a requested stack version', async () => {
-    expect((await service.create(input({ stackVersion: '1.0.0' }))).version).toBe('1.0.0');
-  });
-
-  it('applies the JetBrains editor profile to the devfile', async () => {
-    await service.create(input({ editor: 'intellij' }));
-    const names = onlyWorkspace().spec?.template?.components?.map((c) => c.name);
-    expect(names).toContain('che-idea-server');
-    expect(names).not.toContain('venv');
-    expect(onlyWorkspace().spec?.contributions?.[0]?.uri).toContain('che-incubator/che-idea/latest');
-  });
-
-  it('records a create metric with the stack’s resources, version and editor', async () => {
-    await service.create(input());
-    expect(metrics.records.filter((r) => r.resourcetype === 'workspace')).toEqual([
-      expect.objectContaining({
-        eventtype: 'create',
-        soeid: 'pp1',
-        csiid: '1001',
-        workspaceversion: '2.0.0',
-        editorname: 'vscode',
-        limitcpu: 2,
-        limitmemory: 4,
-        storage: 3,
-        status: { failed: false, error: '', message: '' },
-      }),
-    ]);
-  });
-
-  it('rejects an unknown stack before creating anything in the cluster', async () => {
-    await expect(service.create(input({ devworkspaceValue: 'cobol' }))).rejects.toBeInstanceOf(
-      WorkspaceConfigNotFoundError,
-    );
-    expect(kube.workspaces()).toHaveLength(0);
-  });
-
-  it('records a failed metric when the cluster refuses the workspace', async () => {
-    kube.failOnce('create:DevWorkspace', new UpstreamError('webhook denied'));
-    await expect(service.create(input())).rejects.toBeInstanceOf(UpstreamError);
-    const failed = metrics.records.find((r) => r.resourcetype === 'workspace');
-    expect(failed?.status).toMatchObject({ failed: true, error: 'webhook denied' });
-  });
-
-  it('enforces the total workspace limit', async () => {
-    for (const phase of ['Stopped', 'Stopped', 'Stopped']) {
-      const ws = await service.create(input());
-      kube.setPhase(wsNamespace, ws.id, phase);
-    }
-    await expect(service.create(input())).rejects.toBeInstanceOf(WorkspaceCountExceededError);
-  });
-
-  it('enforces the running workspace limit', async () => {
-    const a = await service.create(input());
-    const b = await service.create(input());
-    kube.setPhase(wsNamespace, a.id, 'Running');
-    kube.setPhase(wsNamespace, b.id, 'Running');
-    await expect(service.create(input())).rejects.toBeInstanceOf(WorkspaceRunCountExceededError);
-  });
-
-  it('counts workspaces without a phase as running', async () => {
-    await service.create(input());
-    await service.create(input());
-    await expect(service.create(input())).rejects.toBeInstanceOf(WorkspaceRunCountExceededError);
-  });
-
-  it('does not count stopped or failed workspaces as running', async () => {
-    const a = await service.create(input());
-    const b = await service.create(input());
-    kube.setPhase(wsNamespace, a.id, 'Stopped');
-    kube.setPhase(wsNamespace, b.id, 'Failed');
-    await expect(service.create(input())).resolves.toBeDefined();
-  });
-});
-
-describe('list / get', () => {
-  it('lists across all of the user’s namespaces and nobody else’s', async () => {
-    await service.create(input({ csiid: '1001' }));
-    await service.create(input({ csiid: '1002' }));
-    kube.seedNamespace('pp2-devspaces-1', 'pp2');
-    await kube.create('DevWorkspace', 'pp2-devspaces-1', {
-      metadata: { name: 'theirs' },
-      spec: { started: false },
-    });
-    const list = await service.list('pp1');
-    expect(list).toHaveLength(2);
-    expect(list.map((w) => w.csiid).sort()).toEqual(['1001', '1002']);
-  });
-
-  it('gets one workspace and 404s for unknown or foreign ids', async () => {
-    const ws = await service.create(input());
-    expect((await service.get('pp1', ws.id)).id).toBe(ws.id);
-    await expect(service.get('pp1', 'nope')).rejects.toBeInstanceOf(NotFoundError);
-    await expect(service.get('pp2', ws.id)).rejects.toBeInstanceOf(NotFoundError);
-  });
-});
-
-describe('start / stop', () => {
-  it('starts a stopped workspace and records it', async () => {
-    const ws = await service.create(input());
-    kube.setPhase(wsNamespace, ws.id, 'Stopped');
-    await service.start('pp1', ws.id);
-    expect(onlyWorkspace().spec?.started).toBe(true);
-    expect(metrics.records.at(-1)).toMatchObject({ eventtype: 'start', resourcename: ws.id });
-  });
-
-  it('is a no-op for a workspace that is already running or starting', async () => {
-    const ws = await service.create(input());
-    kube.setPhase(wsNamespace, ws.id, 'Running');
-    const before = metrics.records.length;
-    await service.start('pp1', ws.id);
-    expect(kube.calls).not.toContain('setWorkspaceStarted');
-    expect(metrics.records).toHaveLength(before);
-  });
-
-  it('refuses to start when the running limit is reached', async () => {
-    const a = await service.create(input());
-    kube.setPhase(wsNamespace, a.id, 'Stopped');
-    const b = await service.create(input());
-    kube.setPhase(wsNamespace, b.id, 'Stopped');
-    const c = await service.create(input({ csiid: '1002' }));
-    kube.setPhase('pp1-devspaces-1002', c.id, 'Stopped');
-    kube.setPhase(wsNamespace, a.id, 'Running');
-    kube.setPhase(wsNamespace, b.id, 'Running');
-    await expect(service.start('pp1', c.id)).rejects.toBeInstanceOf(WorkspaceRunCountExceededError);
-  });
-
-  it('stops a workspace and records how long it ran', async () => {
-    const ws = await service.create(input());
-    kube.setPhase(wsNamespace, ws.id, 'Running');
-    clock.advance(90 * 60 * 1000);
-    await service.stop('pp1', ws.id);
-    expect(onlyWorkspace().spec?.started).toBe(false);
-    expect(metrics.records.at(-1)).toMatchObject({ eventtype: 'stop', duration: '1 hour 30 minutes' });
-  });
-
-  it('404s for an unknown workspace', async () => {
-    await expect(service.stop('pp1', 'nope')).rejects.toBeInstanceOf(NotFoundError);
-    await expect(service.start('pp1', 'nope')).rejects.toBeInstanceOf(NotFoundError);
-  });
-
-  it('records a failed stop', async () => {
-    const ws = await service.create(input());
-    kube.failOnce('setWorkspaceStarted', new UpstreamError('patch failed'));
-    await expect(service.stop('pp1', ws.id)).rejects.toBeInstanceOf(UpstreamError);
-    expect(metrics.records.at(-1)?.status).toMatchObject({ failed: true, error: 'patch failed' });
-  });
-});
-
-describe('delete', () => {
-  it('deletes the workspace and records its lifetime', async () => {
-    const ws = await service.create(input());
-    clock.advance(2 * 60 * 60 * 1000);
-    await service.delete('pp1', ws.id);
-    expect(kube.workspaces()).toHaveLength(0);
-    expect(metrics.records.at(-1)).toMatchObject({
-      eventtype: 'delete',
-      duration: '2 hours',
-      limitcpu: 2,
-      storage: 3,
-    });
-  });
-
-  it('also removes the legacy DevWorkspaceTemplate a workspace contributes', async () => {
-    kube.seedNamespace(wsNamespace, 'pp1', '1001');
-    await kube.create('DevWorkspaceTemplate', wsNamespace, { metadata: { name: 'legacy-template' } });
-    await kube.create('DevWorkspace', wsNamespace, {
-      metadata: { name: 'legacy' },
-      spec: { contributions: [{ name: 'x', kubernetes: { name: 'legacy-template' } }] },
-    });
-    await service.delete('pp1', 'legacy');
-    expect(kube.objects.size).toBe(0);
-  });
-
-  it('404s for an unknown workspace', async () => {
-    await expect(service.delete('pp1', 'nope')).rejects.toBeInstanceOf(NotFoundError);
-  });
-});
-
-describe('helpers', () => {
-  it('isActive', () => {
-    expect(isActive({ status: {} })).toBe(true);
-    expect(isActive({})).toBe(true);
-    for (const phase of ['Running', 'Starting', 'Stopping'])
-      expect(isActive({ status: { phase } })).toBe(true);
-    for (const phase of ['Stopped', 'Failed']) expect(isActive({ status: { phase } })).toBe(false);
-  });
-
-  it('toWorkspace tolerates a sparse resource', () => {
-    expect(toWorkspace({ metadata: { name: 'x', namespace: 'pp1-devspaces-5' } })).toMatchObject({
-      id: 'x',
-      csiid: '5',
-      phase: 'Starting',
-      mainUrl: '',
-      created: '',
-      limitcpu: 0,
-    });
+  it('stops redacting past a sane depth', () => {
+    const deep = { a: { b: { c: { d: { e: { f: { g: 1 } } } } } } };
+    expect(redact(deep)).toEqual(deep);
   });
 });
 
 @@CHECKSUMS
-c823fcb5b8b32cf03a798e12a2d799d109143250b4be33d14df708e22bee9b9c  /.env.example
-523fc53b6ad057d9eb20d65528ab2692c9553a63de43f437ac6281abbe972a11  /.gitignore
-174d73ccfecf414575eb2fe1ab02419fe59888cca7ffda5c98c47fc70709125d  /README.md
-c3d6ac51fe2ce43f7d4e8b6187092d0700682c8cb14771892a91139763142634  /src/config/env.ts
-af35f5bb71bca249316dd7366fc47df17c321c848c55e8309ab5ec41a0e158e1  /src/container.ts
-7ed719e06237b6318427168517b775fa43cf769a3164f765785fde560e9c2d47  /src/factories/workspace-factory.ts
-14691515587fd8c7e63bb7a7fdb9fa95139bbf3a9303c09ab4a2a6211cf59eef  /src/http/app.ts
-1902ba049e4aad6e6262a873be515dacf2e83ec4c486a03fb97e94a5f2b12f47  /src/index.ts
-a1c1698b81c09c57f81cf76201da3ba0e223678a36742587ec5694679165d5d6  /src/infra/kube/KubeClient.ts
-618315fb46d5643659a6b97b9396177406384a6578c7a40c104c9757fc7ba41d  /tests/helpers/integration.ts
-e21f58351a9e5caccce4263e3b67f2fb551cf39fd8d9d2781dcdf8b436e6bbb0  /tests/integration/deploy-cluster.test.ts
-4e7156e9a2a17e653a12ca17d45606e3097a25b3447f5ebf1e9b339e2fc1e951  /tests/integration/metrics-db-and-wiring.test.ts
-e357257c0056c0b3d09682de7764f638594736d5e735c66e242a11e712fe492b  /tests/unit/config/env.test.ts
-053fc73e164e00db1b75a840b803ebaef8bea4136045bad5be36335b33387055  /tests/unit/factories/workspace-factory.test.ts
-be6a8f527a3f7bf1f9d669febddf1881a7cc224baf750215363bbeddb44bc509  /tests/unit/infra/KubeClient.test.ts
-5d8cd696984dfbae79788704bcc00aa990f64fcebc9d5bf8568e53cd01a34823  /tests/unit/services/WorkspaceService.test.ts
+76ded16c3d90b7ecd38d0a5e27fcc54fda2571695c3a1c5915e9612502a44910  /.env.example
+d80ed86b586594f5c976ee35a03fda8e006530aae7dc8f58b0dca14b2ced5d74  /README.md
+7eaee32b7abceaa5fa850d05aaec220126a20843ff2c445bfb3a58236ff62f19  /docs/PROJECT_RULES.md
+ca0252d62c9d3665ba48de8ef815502eb25e5e0949b51dfcc5f23af1e8342e0d  /src/config/env.ts
+0d1dccb9c713bd1c911ed6779aa5ae1180fc68eb4925ac8b6504992763fc0bd4  /src/http/app.ts
+6e4e997fd2a0607e2234b689010a4abf261038211686312874cfc503a53184ba  /src/index.ts
+839a3f9d95086f3784c90d93fb752638cd509277671ac232060ff6cd40469c28  /src/infra/email/EmailNotifier.ts
+ed4cfe2ad6c057321507cb4be64f68c9288783bb4fa18225dd68e7c426969634  /src/services/DeploymentNamespaceService.ts
+2c9c968c2d4707de68cd60dd53e70e82697e812fcb4154516d3a0325a14801cc  /src/services/WorkspaceService.ts
+877f4f9b7d36201480f2861129423ed585547539881a754c073b80f7bafe9154  /src/utils/log-format.ts
+9fe14ed7436a98a41feda4a996f1b9e9e8382ffb1cb1d8a71e4731e1bbd41187  /src/utils/logger.ts
+9c82aaaaa6724990c490406120f33bc487a4f61e57954ddf0fbccbd50a0ce13b  /tests/helpers/integration.ts
+b8fca413989c484cfac98c5e0fdf91376d32038c0c7d64a65e6e106c8d4d5e8c  /tests/integration/request-logging.test.ts
+1f9e272aeb7f41c845746a15a043ba7085702632b15252bd6514df7437fffec5  /tests/unit/config/env.test.ts
+e97d38f449ac871ced6b86292889473247fea23047f52b366c4e879ab26280f2  /tests/unit/utils/log-format.test.ts
+7aa7a2acb960aa640492e89a9e84b2c9366054a6d9789aba704c90ca1316fc5e  /tests/unit/utils/logger.test.ts

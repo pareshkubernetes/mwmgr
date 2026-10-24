@@ -73,6 +73,31 @@ pod service account. `CLUSTER_TOKEN` and `DEPLOY_CLUSTER_TOKEN` set a token expl
 for the editor link is `DEV_SPACES_SERVICE_FQDN`, or `https://devspaces.apps.<cluster domain>` worked out from `CLUSTER_API_URL`.
 At startup the service logs what it understood (which variable supplied each token, never the token itself).
 
+## Logs
+
+The terminal shows one readable entry per event: `time | LEVEL | event | details`, the whole line coloured.
+
+| Colour | Meaning                                                                                                 |
+| ------ | ------------------------------------------------------------------------------------------------------- |
+| green  | something succeeded: a call that returned 2xx/3xx, a workspace created/started/stopped/deleted, startup |
+| orange | warnings: a call the caller got wrong (4xx), TLS checking switched off, a table with missing columns    |
+| red    | errors: a call that failed on our side (5xx) and its cause, a failed e-mail, a database write failure   |
+| white  | everything else (information, debug)                                                                    |
+
+```text
+2026-10-24 00:55:44.025 | OK    | request                        | GET    /healthz -> 200 (6 ms)  requestId=258d…
+2026-10-24 00:55:44.366 | WARN  | request                        | POST   /api/v1/login -> 401 (2 ms)  requestId=dc21…
+2026-10-24 00:55:44.479 | ERROR | request.failed
+    requestId : d348d911-a444-4803-bc94-3b3affad830b
+    code      : UPSTREAM_ERROR
+    error     : Devfile registry catalog: No response received from server
+```
+
+Entries with a lot of detail (startup summary, errors) use indented `key : value` lines followed by a blank line, so
+entries never run together. Secrets (tokens, passwords) are never printed. `LOG_FORMAT=json` gives one JSON object
+per line for a log collector (a success carries `"outcome":"success"`), `NO_COLOR=1` or `LOG_COLOR=false` removes the
+colours, `LOG_LEVEL=debug|info|warn|error|silent` filters.
+
 ## API (version 1)
 
 All routes live under **`/api/v1`**. Send `Authorization: Bearer <jwt>` except for `login`.

@@ -326,6 +326,27 @@ describe('cluster tokens', () => {
   });
 });
 
+describe('logging settings', () => {
+  const base = { ...TEAM_ENV };
+
+  it('defaults to the readable coloured format', () => {
+    const c = loadConfig(base);
+    expect(c.logFormat).toBe('pretty');
+    expect(c.logColor).toBe(true);
+  });
+
+  it('LOG_FORMAT=json switches to one JSON object per line', () => {
+    expect(loadConfig({ ...base, LOG_FORMAT: 'json' }).logFormat).toBe('json');
+    expect(() => loadConfig({ ...base, LOG_FORMAT: 'xml' })).toThrow(/LOG_FORMAT/);
+  });
+
+  it('colours can be switched off with LOG_COLOR=false or the standard NO_COLOR variable', () => {
+    expect(loadConfig({ ...base, LOG_COLOR: 'false' }).logColor).toBe(false);
+    expect(loadConfig({ ...base, NO_COLOR: '1' }).logColor).toBe(false);
+    expect(loadConfig({ ...base, NO_COLOR: '' }).logColor).toBe(true);
+  });
+});
+
 describe('address helpers', () => {
   it('clusterNameOf', () => {
     expect(clusterNameOf('https://api.namctigtd001d.ecs.dyn.nsroot.net:6443')).toBe('namctigtd001d');

@@ -123,7 +123,7 @@ These rules are binding for every change. If a rule must be broken, say why in t
 
 1. `/healthz` (liveness) never touches dependencies. `/readyz` checks Kubernetes API and
    Postgres reachability.
-2. Structured JSON logs, one line per event, with `requestId`, `soeid`, `event`.
+2. Logs are one entry per event with `requestId`, `soeid`, `event`. Terminal format (`LOG_FORMAT=pretty`, the default) is readable and coloured: errors red, warnings orange, successes green, everything else white; `LOG_FORMAT=json` gives structured JSON lines. Use `logger.success` for something that worked, `warn` for a problem the caller or the setup caused, `error` for a failure on our side.
 3. Graceful shutdown on `SIGTERM`: stop accepting, drain, close the DB pool.
 4. Config via environment variables only; every variable is documented in `.env.example`.
 5. Container runs as non-root, read-only root filesystem compatible.

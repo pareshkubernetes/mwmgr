@@ -12,6 +12,10 @@ const schema = z.object({
   PORT: intFrom(3050),
   NODE_ENV: z.string().default('development'),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error', 'silent']).default('info'),
+  // pretty = readable lines for a terminal; json = one JSON object per line for log collectors
+  LOG_FORMAT: z.enum(['pretty', 'json']).default('pretty'),
+  // colours in the pretty format (errors red, warnings orange, successes green, the rest white); NO_COLOR turns them off
+  LOG_COLOR: flag('true'),
 
   SECRET_KEY: z.string().min(16, 'SECRET_KEY must be at least 16 characters'),
   ADMIN_USERNAME: z.string().min(1, 'ADMIN_USERNAME is required'),
@@ -133,6 +137,9 @@ export interface AppConfig {
   port: number;
   nodeEnv: string;
   logLevel: 'debug' | 'info' | 'warn' | 'error' | 'silent';
+  logFormat: 'pretty' | 'json';
+  /** ANSI colours in the pretty log format. */
+  logColor: boolean;
   /** Serve the pre-versioning paths (/login, /:soeid/...) as deprecated aliases of /api/v1. */
   legacyRoutes: boolean;
   auth: { secretKey: string; adminUsername: string; adminPassword: string; expiresIn: string };
@@ -265,6 +272,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     port: e.PORT,
     nodeEnv: e.NODE_ENV,
     logLevel: e.LOG_LEVEL,
+    logFormat: e.LOG_FORMAT,
+    logColor: e.LOG_COLOR && !cleaned.NO_COLOR,
     legacyRoutes: e.LEGACY_UNVERSIONED_ROUTES,
     auth: {
       secretKey: e.SECRET_KEY,

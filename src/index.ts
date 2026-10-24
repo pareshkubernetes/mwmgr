@@ -10,7 +10,12 @@ async function main(): Promise<void> {
   const config = loadConfig(
     process.argv[2] ? { ...process.env, KUBECONFIG_PATH: process.argv[2] } : process.env,
   );
-  const logger = createLogger(config.logLevel);
+  const logger = createLogger(
+    config.logLevel,
+    undefined,
+    {},
+    { format: config.logFormat, color: config.logColor },
+  );
   if (!config.cluster.tlsRejectUnauthorized) {
     logger.warn('cluster.tls_verification_disabled', {
       reason: 'NODE_TLS_REJECT_UNAUTHORIZED=0',
@@ -19,7 +24,7 @@ async function main(): Promise<void> {
   }
   const container = buildContainer(config, logger, createProductionDependencies(config, logger));
   const server: Server = createApp(container).listen(config.port, () =>
-    logger.info('server.listening', startupSummary(config)),
+    logger.success('server.listening', startupSummary(config)),
   );
 
   let shuttingDown = false;

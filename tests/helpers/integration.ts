@@ -4,7 +4,7 @@ import { buildContainer, type Container } from '../../src/container.js';
 import { createApp } from '../../src/http/app.js';
 import { signToken } from '../../src/http/auth.js';
 import { DevfileRegistryClient, createRegistryHttp } from '../../src/infra/devreg/DevfileRegistryClient.js';
-import { silentLogger } from '../../src/utils/logger.js';
+import { silentLogger, type Logger } from '../../src/utils/logger.js';
 import { makeConfig, makeFakes, makePgMemRepository, type Fakes } from './testkit.js';
 import { startRegistryServer, type RegistryServer } from './registry-server.js';
 import type { InMemoryKube } from './InMemoryKube.js';
@@ -28,13 +28,13 @@ export interface Integration {
  */
 export async function startIntegration(
   env: Record<string, string> = {},
-  options: { deployKube?: InMemoryKube } = {},
+  options: { deployKube?: InMemoryKube; logger?: Logger } = {},
 ): Promise<Integration> {
   const registry = await startRegistryServer();
   const config = makeConfig({ DEVREG_URL: registry.url, ...env });
   const fakes = makeFakes();
   const db = await makePgMemRepository();
-  const container = buildContainer(config, silentLogger, {
+  const container = buildContainer(config, options.logger ?? silentLogger, {
     kube: fakes.kube,
     deployKube: options.deployKube,
     metrics: db.repo,

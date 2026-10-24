@@ -88,7 +88,7 @@ export class DeploymentNamespaceService {
     await this.kube.apply('LimitRange', name, DEPLOYMENT_LIMIT_RANGE_DEFAULT_CONFIG);
     await this.kube.apply('ResourceQuota', name, DEPLOYMENT_RESOURCE_QUOTA_STORAGE_CONFIG);
     await this.grantAccess(soeid, name);
-    this.logger.info('deployment_namespace.created', { soeid, namespace: name });
+    this.logger.success('deployment_namespace.created', { soeid, namespace: name });
     return name;
   }
 

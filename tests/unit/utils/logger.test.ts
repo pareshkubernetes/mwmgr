@@ -51,6 +51,82 @@ describe('logger', () => {
     expect(JSON.stringify(lines[0])).not.toContain('ghp_secret');
   });
 
+  it('success is an info-level line marked as a success, and hidden when only warnings are wanted', () => {
+    const { lines, logger } = capture();
+    logger.success('workspace.created', { workspace: 'w1' });
+    expect(lines[0]).toMatchObject({
+      level: 'info',
+      outcome: 'success',
+      event: 'workspace.created',
+      workspace: 'w1',
+    });
+    const quiet = capture('warn');
+    quiet.logger.success('workspace.created');
+    expect(quiet.lines).toHaveLength(0);
+  });
+
+  it('plain info lines carry no outcome', () => {
+    const { lines, logger } = capture();
+    logger.info('x');
+    expect(lines[0]).not.toHaveProperty('outcome');
+  });
+
+  describe('pretty format (terminal)', () => {
+    const now = () => new Date(2026, 0, 2, 3, 4, 5, 678);
+    const pretty = (level: Parameters<typeof createLogger>[0] = 'info', color = true) => {
+      const out: string[] = [];
+      return { out, logger: createLogger(level, (l) => out.push(l), {}, { format: 'pretty', color, now }) };
+    };
+
+    it('paints each kind in its colour: error red, warn orange, success green, info and debug white', () => {
+      const { out, logger } = pretty('debug');
+      logger.error('e');
+      logger.warn('w');
+      logger.success('s');
+      logger.info('i');
+      logger.debug('d');
+      expect(out).toEqual([
+        '\u001b[31m2026-01-02 03:04:05.678 | ERROR | e\u001b[0m',
+        '\u001b[38;5;208m2026-01-02 03:04:05.678 | WARN  | w\u001b[0m',
+        '\u001b[32m2026-01-02 03:04:05.678 | OK    | s\u001b[0m',
+        '\u001b[97m2026-01-02 03:04:05.678 | INFO  | i\u001b[0m',
+        '\u001b[97m2026-01-02 03:04:05.678 | DEBUG | d\u001b[0m',
+      ]);
+    });
+
+    it('writes one sink call per entry, plain when colour is off', () => {
+      const { out, logger } = pretty('info', false);
+      logger.info('a', { n: 1 });
+      logger.warn('b');
+      expect(out).toEqual([
+        `2026-01-02 03:04:05.678 | INFO  | ${'a'.padEnd(30)} | n=1`,
+        '2026-01-02 03:04:05.678 | WARN  | b',
+      ]);
+    });
+
+    it('applies the level filter, bindings of child loggers, and redaction', () => {
+      const { out, logger } = pretty('info', false);
+      logger.debug('hidden');
+      logger.child({ requestId: 'r1' }).info('x', { token: 'ghp_secret', ok: 1 });
+      expect(out).toHaveLength(1);
+      expect(out[0]).toContain('requestId=r1');
+      expect(out[0]).toContain('token=[redacted]');
+      expect(out[0]).not.toContain('ghp_secret');
+    });
+
+    it('child loggers keep the format and colour of their parent', () => {
+      const { out, logger } = pretty('info', true);
+      logger.child({ a: 1 }).error('boom');
+      expect(out[0]?.startsWith('\u001b[31m')).toBe(true);
+    });
+
+    it('the default is still JSON, so existing log collectors keep working', () => {
+      const lines: string[] = [];
+      createLogger('info', (l) => lines.push(l)).info('x');
+      expect(JSON.parse(lines[0] as string)).toMatchObject({ event: 'x', level: 'info' });
+    });
+  });
+
   it('serialises errors as name and message only', () => {
     expect(redact(new Error('bad'))).toEqual({ name: 'Error', message: 'bad' });
   });

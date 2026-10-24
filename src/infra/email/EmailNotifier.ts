@@ -96,7 +96,7 @@ export class EmailNotifier implements Notifier {
         signal: AbortSignal.timeout(10_000),
       });
       if (!response.ok) throw new Error(`mail service answered ${response.status}`);
-      this.logger.info('email.sent', { soeid, subject });
+      this.logger.success('email.sent', { soeid, subject });
     } catch (error) {
       this.logger.error('email.failed', { soeid, subject, error: errorMessage(error) });
     }

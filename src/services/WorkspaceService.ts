@@ -144,7 +144,7 @@ export class WorkspaceService {
       },
       () => this.kube.create<DevWorkspaceResource>('DevWorkspace', namespace, body),
     );
-    this.logger.info('workspace.created', { soeid, namespace, workspace: created.metadata?.name });
+    this.logger.success('workspace.created', { soeid, namespace, workspace: created.metadata?.name });
     return toWorkspace(created);
   }
 
@@ -178,6 +178,11 @@ export class WorkspaceService {
       },
       () => this.kube.setWorkspaceStarted(namespace, name, started),
     );
+    this.logger.success(started ? 'workspace.started' : 'workspace.stopped', {
+      soeid,
+      namespace,
+      workspace: name,
+    });
     return toWorkspace({ ...dw, ...patched, metadata: { ...dw.metadata, ...patched.metadata } });
   }
 
@@ -209,7 +214,7 @@ export class WorkspaceService {
         }
       },
     );
-    this.logger.info('workspace.deleted', { soeid, namespace, workspace: name });
+    this.logger.success('workspace.deleted', { soeid, namespace, workspace: name });
   }
 
   private editorId(editor: EditorKey): string {
